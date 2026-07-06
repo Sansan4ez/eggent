@@ -53,6 +53,8 @@ export function KnowledgeSection({ projectId }: KnowledgeSectionProps) {
     useEffect(() => {
         loadFiles();
         loadMemories();
+        // loadFiles/loadMemories intentionally re-run only when the selected project changes.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [projectId]);
 
     async function loadFiles() {

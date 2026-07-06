@@ -36,10 +36,11 @@ export default function SettingsPage() {
       .catch(() => setLoading(false));
   }, []);
 
+  const darkMode = settings?.general.darkMode ?? false;
+
   useEffect(() => {
-    if (!settings) return;
-    document.documentElement.classList.toggle("dark", settings.general.darkMode);
-  }, [settings?.general.darkMode]);
+    document.documentElement.classList.toggle("dark", darkMode);
+  }, [darkMode]);
 
   async function handleSave() {
     if (!settings) return;

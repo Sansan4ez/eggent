@@ -10,6 +10,7 @@ import {
   Bot,
   Brain,
   FolderOpen,
+  GitBranch,
   LifeBuoy,
   LogOut,
   MessageSquarePlus,
@@ -297,6 +298,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <Link href="/dashboard/mcp">
                   <Wrench className="size-4" />
                   <span>MCP</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild>
+                <Link href="/dashboard/pipelines">
+                  <GitBranch className="size-4" />
+                  <span>Pipelines</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

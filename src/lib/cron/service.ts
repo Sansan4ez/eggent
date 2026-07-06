@@ -1,7 +1,7 @@
 import { createChat, getChat } from "@/lib/storage/chat-store";
 import { getAllProjects, getProject } from "@/lib/storage/project-store";
 import { getTelegramIntegrationRuntimeConfig } from "@/lib/storage/telegram-integration-store";
-import { runAgentText } from "@/lib/agent/agent";
+import { runPiAgentText } from "@/lib/pi/chat-runner";
 import { parseAbsoluteTimeMs } from "@/lib/cron/parse";
 import { resolveCronRunLogPath, resolveCronStorePath, GLOBAL_CRON_PROJECT_ID } from "@/lib/cron/paths";
 import { appendCronRunLog, readCronRunLogEntries } from "@/lib/cron/run-log";
@@ -622,11 +622,11 @@ async function executeCronJob(job: CronJob): Promise<RunResult> {
   };
 
   try {
-    const runPromise = runAgentText({
+    const runPromise = runPiAgentText({
       chatId,
       userMessage: job.payload.message,
       projectId,
-      currentPath: job.payload.currentPath,
+      cwd: job.payload.currentPath,
       runtimeData:
         telegramChatId && telegramBotToken
           ? {

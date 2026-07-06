@@ -117,9 +117,15 @@ export default function ProjectDetailsPage() {
                                             <ArrowLeft className="size-4" />
                                         </Button>
                                         <h1 className="text-2xl font-semibold tracking-tight">{project.name}</h1>
+                                        <span className="rounded-full bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
+                                            pi agent config
+                                        </span>
                                     </div>
                                     <p className="text-muted-foreground">
                                         {project.description || "No description provided."}
+                                    </p>
+                                    <p className="mt-2 text-sm text-muted-foreground">
+                                        This Eggent project is a pi agent configuration: context, skills, MCP servers, memory and knowledge are injected into pi when this agent runs.
                                     </p>
                                 </div>
                                 {/* Could handle project settings here */}
@@ -132,7 +138,7 @@ export default function ProjectDetailsPage() {
                             {/* Instructions */}
                             <div className="space-y-2">
                                 <h3 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">
-                                    Instructions
+                                    Agent context / instructions
                                 </h3>
                                 {instructionsStatus && (
                                     <div
@@ -148,7 +154,7 @@ export default function ProjectDetailsPage() {
                                 <textarea
                                     value={instructionsDraft}
                                     onChange={(e) => setInstructionsDraft(e.target.value)}
-                                    placeholder="No custom instructions defined."
+                                    placeholder="Describe how this pi agent should behave when this Eggent project is launched."
                                     disabled={instructionsSaving}
                                     className="min-h-[140px] w-full rounded-lg border bg-muted/50 p-4 text-sm font-mono whitespace-pre-wrap focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-70"
                                 />
@@ -179,7 +185,7 @@ export default function ProjectDetailsPage() {
                                 </div>
                             </div>
 
-                            {/* MCP + Skills */}
+                            {/* MCP + Skills: project-local pi agent resources */}
                             <ProjectContextSection projectId={project.id} />
 
                             {/* Cron Jobs */}

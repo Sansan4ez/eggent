@@ -325,11 +325,12 @@ export function ChatPanel() {
     }
   }, [activeChatId]);
 
-  // Stable transport — body is a function so it always reads current refs
+  // Stable transport — body is a function so it always reads current refs.
+  // /api/chat uses the pi SDK backend by default; override only for experiments.
   const transport = useMemo(
     () =>
       new DefaultChatTransport({
-        api: "/api/chat",
+        api: process.env.NEXT_PUBLIC_EGGENT_CHAT_API || "/api/chat",
         body: () => ({
           chatId: internalChatIdRef.current,
           projectId: activeProjectIdRef.current,
@@ -525,7 +526,7 @@ export function ChatPanel() {
         }
       })();
     }
-  }, [messages, status, applySwitchResult, refreshProjects]);
+  }, [messages, status, applySwitchResult, refreshProjects, setMessages]);
 
   const isLoading = status === "submitted" || status === "streaming";
 

@@ -1,4 +1,4 @@
-import { runAgentText } from "@/lib/agent/agent";
+import { runPiAgentText } from "@/lib/pi/chat-runner";
 import { createChat, getChat } from "@/lib/storage/chat-store";
 import { getAllProjects, getProject } from "@/lib/storage/project-store";
 import {
@@ -252,11 +252,11 @@ export async function handleExternalMessage(
   const beforeChat = await getChat(resolvedChatId);
   const beforeCount = beforeChat?.messages.length ?? 0;
 
-  const reply = await runAgentText({
+  const reply = await runPiAgentText({
     chatId: resolvedChatId,
     userMessage: message,
     projectId: resolvedProjectId,
-    currentPath: currentPath || undefined,
+    cwd: currentPath || undefined,
     runtimeData: input.runtimeData,
   });
 

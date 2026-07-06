@@ -1,5 +1,6 @@
+import { createUIMessageStreamResponse } from "ai";
 import { NextRequest } from "next/server";
-import { runAgent } from "@/lib/agent/agent";
+import { createPiChatUIMessageStream } from "@/lib/pi/chat-runner";
 import { createChat, getChat } from "@/lib/storage/chat-store";
 import { ensureCronSchedulerStarted } from "@/lib/cron/runtime";
 
@@ -58,12 +59,31 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Run agent and return streaming response
+    const resolvedCurrentPath = typeof currentPath === "string" ? currentPath : undefined;
+
+    if (process.env.EGGENT_AGENT_BACKEND !== "legacy") {
+      const stream = createPiChatUIMessageStream({
+        chatId: resolvedChatId,
+        userMessage: message,
+        projectId,
+        cwd: resolvedCurrentPath,
+      });
+
+      return createUIMessageStreamResponse({
+        stream,
+        headers: {
+          "X-Chat-Id": resolvedChatId,
+        },
+      });
+    }
+
+    // Optional legacy fallback: set EGGENT_AGENT_BACKEND=legacy.
+    const { runAgent } = await import("@/lib/agent/agent");
     const result = await runAgent({
       chatId: resolvedChatId,
       userMessage: message,
       projectId,
-      currentPath: typeof currentPath === "string" ? currentPath : undefined,
+      currentPath: resolvedCurrentPath,
     });
 
     return result.toUIMessageStreamResponse({

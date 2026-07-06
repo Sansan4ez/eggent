@@ -10,7 +10,12 @@ const nextConfig = {
     config.resolve.alias.canvas = false;
     return config;
   },
-  serverExternalPackages: ["child_process", "pdfjs-dist"],
+  serverExternalPackages: [
+    "child_process",
+    "pdfjs-dist",
+    "@earendil-works/pi-coding-agent",
+    "typebox",
+  ],
   experimental: {
     serverActions: {
       bodySizeLimit: "10mb",
