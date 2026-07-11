@@ -215,6 +215,11 @@ export async function createEggentPiSession(options: PiSessionOptions = {}) {
     sessionManager: createSessionManager(options, cwd),
   });
 
+  // SDK sessions do not emit extension lifecycle events until bindExtensions()
+  // is called. Eggent has no TUI, but extensions such as pi-mcp-adapter and
+  // pi-subagents initialize their per-session managers on session_start.
+  await session.bindExtensions({ mode: "rpc" });
+
   const baseDispose = session.dispose.bind(session);
   session.dispose = () => {
     void eggentTools.cleanup().catch((error) => {
