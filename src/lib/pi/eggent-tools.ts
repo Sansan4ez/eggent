@@ -153,10 +153,10 @@ export async function createEggentPiTools(options: {
     defineTool({
       name: "switch_project",
       label: "Switch Eggent Project / Pi Agent Config",
-      description: "Switch the Eggent UI to another project/pi agent configuration.",
+      description: "Switch the Eggent UI to another project/pi agent configuration, or to the orchestrator with project_id='none'.",
       parameters: Type.Object({
-        project_id: Type.String({ description: "Project id to switch to." }),
-        current_path: Type.Optional(Type.String({ description: "Optional relative working directory inside the project." })),
+        project_id: Type.String({ description: "Project id to switch to. Use 'none' for the orchestrator." }),
+        current_path: Type.Optional(Type.String({ description: "Optional relative working directory inside the selected project or orchestrator root." })),
       }),
       execute: async (_toolCallId, params) => {
         return textResult(

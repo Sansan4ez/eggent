@@ -72,19 +72,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
       .catch(() => {});
   }, [setProjects, projectsTick]);
 
-  // Keep active project aligned with available projects.
+  // Keep active project aligned with available projects, but keep the
+  // orchestrator (activeProjectId === null) as a valid persistent mode.
   useEffect(() => {
-    if (projects.length === 0) {
-      if (activeProjectId !== null) setActiveProjectId(null);
-      return;
-    }
+    if (activeProjectId === null) return;
 
-    const activeExists = activeProjectId
-      ? projects.some((project) => project.id === activeProjectId)
-      : false;
-
+    const activeExists = projects.some((project) => project.id === activeProjectId);
     if (!activeExists) {
-      setActiveProjectId(projects[0].id);
+      setActiveProjectId(null);
     }
   }, [projects, activeProjectId, setActiveProjectId]);
 
@@ -112,6 +107,24 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const handleChatClick = (chatId: string) => {
     setActiveChatId(chatId);
     goToChatIfNeeded();
+  };
+
+  const handleOrchestratorClick = () => {
+    const params = new URLSearchParams({ projectId: "none" });
+    fetch(`/api/chat/history?${params}`)
+      .then((r) => r.json())
+      .then((data) => {
+        const list = Array.isArray(data) ? data : [];
+        setChats(list);
+        setActiveProjectId(null);
+        setActiveChatId(list[0]?.id ?? null);
+        goToChatIfNeeded();
+      })
+      .catch(() => {
+        setActiveProjectId(null);
+        setActiveChatId(null);
+        goToChatIfNeeded();
+      });
   };
 
   const handleProjectClick = (projectId: string) => {
@@ -189,6 +202,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <SidebarGroup>
           <SidebarGroupLabel>Project</SidebarGroupLabel>
           <SidebarMenu>
+            <SidebarMenuItem>
+              <SidebarMenuButton
+                isActive={activeProjectId === null}
+                onClick={handleOrchestratorClick}
+              >
+                <Bot className="size-4" />
+                <span className="truncate">Orchestrator</span>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
             {projects.length === 0 && (
               <SidebarMenuItem>
                 <SidebarMenuButton disabled>

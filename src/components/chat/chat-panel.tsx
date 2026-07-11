@@ -71,7 +71,7 @@ function chatMessagesToUIMessages(chatMessages: ChatMessage[]): UIMessage[] {
 interface SwitchProjectResult {
   success?: boolean;
   action?: string;
-  projectId?: string;
+  projectId?: string | null;
   currentPath?: string;
 }
 
@@ -104,10 +104,11 @@ function tryParseSwitchProjectResult(output: unknown): SwitchProjectResult | nul
     return null;
   }
 
-  const projectId = typeof record.projectId === "string" ? record.projectId : undefined;
-  if (!projectId?.trim()) {
+  const rawProjectId = typeof record.projectId === "string" ? record.projectId.trim() : undefined;
+  if (!rawProjectId) {
     return null;
   }
+  const projectId = rawProjectId === "none" ? null : rawProjectId;
 
   return {
     success: true,
@@ -423,8 +424,7 @@ export function ChatPanel() {
   const applySwitchResult = useCallback(
     (result: SwitchProjectResult) => {
       if (switchInFlightRef.current) return;
-      const nextProjectId = result.projectId?.trim();
-      if (!nextProjectId) return;
+      const nextProjectId = typeof result.projectId === "string" ? result.projectId.trim() : null;
 
       switchInFlightRef.current = true;
       try {

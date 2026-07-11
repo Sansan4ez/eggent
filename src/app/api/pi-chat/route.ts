@@ -47,7 +47,9 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: "Message is required" }, { status: 400 });
     }
 
-    const projectId = typeof body.projectId === "string" ? body.projectId : undefined;
+    const projectId = typeof body.projectId === "string" && body.projectId.trim() && body.projectId !== "none"
+      ? body.projectId.trim()
+      : undefined;
     const currentPath = typeof body.currentPath === "string" ? body.currentPath : undefined;
 
     let chatId = typeof body.chatId === "string" && body.chatId.trim() ? body.chatId : undefined;

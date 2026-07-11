@@ -19,7 +19,7 @@ export interface HandleExternalMessageInput {
 }
 
 interface SwitchProjectSignal {
-  projectId: string;
+  projectId: string | null;
   currentPath: string;
 }
 
@@ -38,7 +38,7 @@ export interface ExternalMessageResult {
     currentPath: string;
   };
   switchedProject: {
-    toProjectId: string;
+    toProjectId: string | null;
     toProjectName: string | null;
   } | null;
   createdProject: {
@@ -91,9 +91,10 @@ function parseSwitchProjectSignal(
     return null;
   }
 
-  const projectId =
+  const rawProjectId =
     typeof record.projectId === "string" ? record.projectId.trim() : "";
-  if (!projectId) return null;
+  if (!rawProjectId) return null;
+  const projectId = rawProjectId === "none" ? null : rawProjectId;
 
   const currentPath =
     typeof record.currentPath === "string" ? record.currentPath : "";
@@ -206,9 +207,6 @@ export async function handleExternalMessage(
     session.activeProjectId = explicitProjectId;
   } else if (session.activeProjectId && projectById.has(session.activeProjectId)) {
     resolvedProjectId = session.activeProjectId;
-  } else if (projects.length > 0) {
-    resolvedProjectId = projects[0].id;
-    session.activeProjectId = projects[0].id;
   }
 
   const contextId = contextKey(resolvedProjectId);
@@ -292,13 +290,13 @@ export async function handleExternalMessage(
   let activeChatId = resolvedChatId;
   let activeCurrentPath = currentPath;
 
-  if (switchSignal && projectByIdAfter.has(switchSignal.projectId)) {
+  if (switchSignal && (switchSignal.projectId === null || projectByIdAfter.has(switchSignal.projectId))) {
     activeProjectId = switchSignal.projectId;
     session.activeProjectId = switchSignal.projectId;
     const switchedContextKey = contextKey(switchSignal.projectId);
     session.currentPaths[switchedContextKey] = switchSignal.currentPath ?? "";
     activeCurrentPath = switchSignal.currentPath ?? "";
-    activeChatId = await ensureChatForProject(session, switchSignal.projectId);
+    activeChatId = await ensureChatForProject(session, switchSignal.projectId ?? undefined);
   } else if (createSignal && projectByIdAfter.has(createSignal.projectId)) {
     activeProjectId = createSignal.projectId;
     session.activeProjectId = createSignal.projectId;
@@ -334,11 +332,12 @@ export async function handleExternalMessage(
       currentPath: activeCurrentPath,
     },
     switchedProject:
-      switchSignal && projectByIdAfter.has(switchSignal.projectId)
+      switchSignal && (switchSignal.projectId === null || projectByIdAfter.has(switchSignal.projectId))
         ? {
             toProjectId: switchSignal.projectId,
-            toProjectName:
-              projectByIdAfter.get(switchSignal.projectId)?.name ?? null,
+            toProjectName: switchSignal.projectId
+              ? projectByIdAfter.get(switchSignal.projectId)?.name ?? null
+              : "Orchestrator",
           }
         : null,
     createdProject:

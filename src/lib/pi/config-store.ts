@@ -84,51 +84,100 @@ export async function updatePiModelDefaults(options: {
   return getPiSettingsState(cwd);
 }
 
+export async function setPiDefaultToFirstAvailableModel(provider?: string, cwd = process.cwd()) {
+  const authStorage = getPiAuthStorage();
+  const modelRegistry = getPiModelRegistry(authStorage);
+  await authStorage.reload();
+  await modelRegistry.refresh();
+
+  const available = modelRegistry.getAvailable();
+  const preferredProvider = provider?.trim();
+  const selected = preferredProvider
+    ? available.find((model) => model.provider === preferredProvider)
+    : available[0];
+
+  if (!selected) {
+    return getPiSettingsState(cwd);
+  }
+
+  const settingsManager = getPiSettingsManager(cwd);
+  settingsManager.setDefaultModelAndProvider(selected.provider, selected.id);
+  await settingsManager.flush();
+  return getPiSettingsState(cwd);
+}
+
 export async function getPiModelsState() {
   const authStorage = getPiAuthStorage();
   const modelRegistry = getPiModelRegistry(authStorage);
   await authStorage.reload();
   await modelRegistry.refresh();
 
-  const [available, storedAuth] = await Promise.all([
+  const [available, storedAuth, settings] = await Promise.all([
     modelRegistry.getAvailable(),
     authStorage.getAll(),
+    getPiSettingsState(),
   ]);
   const all = modelRegistry.getAll();
   const providerIds = Array.from(new Set(all.map((model) => model.provider))).sort();
+  const oauthProviders = authStorage.getOAuthProviders().map((provider) => ({
+    id: provider.id,
+    name: provider.name,
+    usesCallbackServer: Boolean(provider.usesCallbackServer),
+  }));
+  const subscriptionOnlyProviderIds = new Set(["openai-codex", "github-copilot"]);
+  const serializeModel = (model: (typeof all)[number], isAvailable: boolean) => ({
+    provider: model.provider,
+    id: model.id,
+    name: model.name,
+    available: isAvailable,
+    contextWindow: model.contextWindow,
+    maxTokens: model.maxTokens,
+    reasoning: Boolean(model.reasoning),
+    input: model.input,
+  });
+  const isAvailable = (provider: string, modelId: string) =>
+    available.some((item) => item.provider === provider && item.id === modelId);
+  const currentModel = settings.defaultProvider && settings.defaultModel
+    ? all.find((model) => model.provider === settings.defaultProvider && model.id === settings.defaultModel)
+    : undefined;
 
   return {
     agentDir: getAgentDir(),
     authFile: path.join(getAgentDir(), "auth.json"),
-    settings: await getPiSettingsState(),
+    settings,
     modelsFile: getPiModelsPath(),
+    current: currentModel ? {
+      provider: settings.defaultProvider,
+      providerName: modelRegistry.getProviderDisplayName(settings.defaultProvider || currentModel.provider),
+      model: serializeModel(currentModel, isAvailable(currentModel.provider, currentModel.id)),
+      auth: modelRegistry.getProviderAuthStatus(currentModel.provider),
+      credentialType: storedAuth[currentModel.provider]?.type,
+      stored: Boolean(storedAuth[currentModel.provider]),
+    } : null,
+    oauthProviders,
+    apiKeyProviders: providerIds
+      .filter((provider) => !subscriptionOnlyProviderIds.has(provider))
+      .map((provider) => ({
+        id: provider,
+        name: modelRegistry.getProviderDisplayName(provider),
+        auth: modelRegistry.getProviderAuthStatus(provider),
+      })),
+    credentials: Object.entries(storedAuth).map(([provider, credential]) => ({
+      provider,
+      providerName: modelRegistry.getProviderDisplayName(provider),
+      type: credential.type,
+      auth: modelRegistry.getProviderAuthStatus(provider),
+    })).sort((a, b) => a.providerName.localeCompare(b.providerName)),
     providers: providerIds.map((provider) => ({
       id: provider,
       name: modelRegistry.getProviderDisplayName(provider),
       auth: modelRegistry.getProviderAuthStatus(provider),
+      credentialType: storedAuth[provider]?.type,
       stored: Boolean(storedAuth[provider]),
       modelCount: all.filter((model) => model.provider === provider).length,
       availableModelCount: available.filter((model) => model.provider === provider).length,
     })),
-    models: all.map((model) => ({
-      provider: model.provider,
-      id: model.id,
-      name: model.name,
-      available: available.some((item) => item.provider === model.provider && item.id === model.id),
-      contextWindow: model.contextWindow,
-      maxTokens: model.maxTokens,
-      reasoning: Boolean(model.reasoning),
-      input: model.input,
-    })),
-    availableModels: available.map((model) => ({
-      provider: model.provider,
-      id: model.id,
-      name: model.name,
-      available: true,
-      contextWindow: model.contextWindow,
-      maxTokens: model.maxTokens,
-      reasoning: Boolean(model.reasoning),
-      input: model.input,
-    })),
+    models: all.map((model) => serializeModel(model, isAvailable(model.provider, model.id))),
+    availableModels: available.map((model) => serializeModel(model, true)),
   };
 }

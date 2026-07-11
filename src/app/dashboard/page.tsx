@@ -5,20 +5,9 @@ import {
   SidebarInset,
   SidebarProvider,
 } from "@/components/ui/sidebar"
-import { redirect } from "next/navigation"
-import {
-  getAllProjects,
-} from "@/lib/storage/project-store"
-
 export const dynamic = "force-dynamic"
 
 export default async function DashboardPage() {
-  const projects = await getAllProjects()
-
-  if (projects.length === 0) {
-    redirect("/dashboard/projects")
-  }
-
   return (
     <div className="[--header-height:calc(--spacing(14))] h-svh overflow-hidden">
       <SidebarProvider className="flex h-full flex-col">

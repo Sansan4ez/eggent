@@ -17,16 +17,18 @@ import {
 } from "@/lib/storage/project-store";
 import { getPiAuthStorage, getPiModelRegistry, getPiSettingsManager } from "@/lib/pi/config-store";
 
+function normalizeProjectId(projectId?: string | null): string | undefined {
+  const trimmed = projectId?.trim();
+  return trimmed && trimmed !== "none" ? trimmed : undefined;
+}
+
 function resolveCwd(options: PiSessionOptions): string {
   const rawCwd = options.cwd?.trim();
   if (rawCwd && path.isAbsolute(rawCwd)) return rawCwd;
 
-  if (options.projectId) {
-    const projectRoot = getWorkDir(options.projectId);
-    return rawCwd ? path.join(projectRoot, rawCwd) : projectRoot;
-  }
-
-  return rawCwd || process.cwd();
+  const projectId = normalizeProjectId(options.projectId);
+  const root = projectId ? getWorkDir(projectId) : getWorkDir(null);
+  return rawCwd ? path.join(root, rawCwd) : root;
 }
 
 function buildEggentProjectContext(options: {
@@ -36,25 +38,44 @@ function buildEggentProjectContext(options: {
   projectInstructions?: string;
   memorySubdir: string;
   cwd: string;
+  runtimeModel?: {
+    provider?: string;
+    id?: string;
+    name?: string;
+  };
 }): string {
   return [
-    "# Eggent project context",
+    "# Eggent runtime context",
     "",
-    "This Eggent project is the configuration for the current pi agent.",
+    options.projectId
+      ? "Mode: Project agent"
+      : "Mode: Orchestrator",
+    options.projectId
+      ? "This Eggent project is the configuration for the current pi agent."
+      : "This orchestrator coordinates all Eggent projects. Each first-level subdirectory in the working directory is a project.",
     "Eggent configures the pi runtime; pi owns reasoning, tools, skills, sessions, compaction, and tool execution.",
     "",
-    options.projectId ? `Project id: ${options.projectId}` : "Project id: global",
+    options.projectId ? `Project id: ${options.projectId}` : "Project id: orchestrator",
     options.projectName ? `Project name: ${options.projectName}` : "",
     options.projectDescription ? `Project description: ${options.projectDescription}` : "",
     `Working directory: ${options.cwd}`,
     `Memory file: memory.md`,
+    options.runtimeModel?.provider && options.runtimeModel?.id
+      ? `Current runtime model: ${options.runtimeModel.provider}/${options.runtimeModel.id}${options.runtimeModel.name ? ` (${options.runtimeModel.name})` : ""}`
+      : "Current runtime model: not selected",
+    "If the user asks which model/provider is being used, answer from the Current runtime model line above rather than from model self-identification.",
     "",
     "Project instructions:",
     options.projectInstructions?.trim() || "No project-specific instructions configured.",
     "",
     "Available Eggent bridge tools:",
-    "- eggent_memory_search / eggent_memory_save / eggent_memory_delete for the project memory.md file.",
-    "- eggent_mcp_* tools for MCP servers configured on this Eggent project.",
+    "- list_projects / create_project / switch_project for navigating Eggent projects.",
+    options.projectId
+      ? "- eggent_memory_search / eggent_memory_save / eggent_memory_delete for the project memory.md file."
+      : "- Project memory tools require a selected project or explicit project_id.",
+    options.projectId
+      ? "- eggent_mcp_* tools for MCP servers configured on this Eggent project."
+      : "- Project MCP tools are available after switching into a project.",
     "- eggent_list_pipelines / eggent_start_pipeline for multi-project pipelines.",
   ]
     .filter(Boolean)
@@ -93,51 +114,71 @@ function createSessionManager(options: PiSessionOptions, cwd: string): SessionMa
  * extensions, context files, retry/compaction, and session behavior.
  */
 export async function createEggentPiSession(options: PiSessionOptions = {}) {
-  const cwd = resolveCwd(options);
+  const projectId = normalizeProjectId(options.projectId);
+  const cwd = resolveCwd({ ...options, projectId });
   const agentDir = options.agentDir || getAgentDir();
   const authStorage = getPiAuthStorage();
   const modelRegistry = getPiModelRegistry(authStorage);
   const settingsManager = getPiSettingsManager(cwd);
   await authStorage.reload();
   await modelRegistry.refresh();
-  const projectModelSettings = options.projectId ? await loadProjectModelSettings(options.projectId) : null;
-  const configuredModel = projectModelSettings && projectModelSettings.inheritsGlobal !== true
-    ? modelRegistry.find(
-        typeof projectModelSettings.provider === "string" ? projectModelSettings.provider : "",
-        typeof projectModelSettings.model === "string" ? projectModelSettings.model : ""
+  const projectModelSettings = projectId ? await loadProjectModelSettings(projectId) : null;
+  const availableModels = modelRegistry.getAvailable();
+  const findAvailableModel = (provider?: string, modelId?: string) => {
+    if (!provider || !modelId) return undefined;
+    return availableModels.find((model) => model.provider === provider && model.id === modelId);
+  };
+  const projectConfiguredModel = projectModelSettings && projectModelSettings.inheritsGlobal !== true
+    ? findAvailableModel(
+        typeof projectModelSettings.provider === "string" ? projectModelSettings.provider : undefined,
+        typeof projectModelSettings.model === "string" ? projectModelSettings.model : undefined
       )
-    : modelRegistry.find(settingsManager.getDefaultProvider(), settingsManager.getDefaultModel());
-  const project = options.projectId ? await getProject(options.projectId) : null;
+    : undefined;
+  const globalConfiguredModel = findAvailableModel(settingsManager.getDefaultProvider(), settingsManager.getDefaultModel());
+  const configuredModel = projectConfiguredModel || globalConfiguredModel || availableModels[0];
+  const project = projectId ? await getProject(projectId) : null;
   const memorySubdir =
     options.memorySubdir ||
-    (project?.memoryMode === "global" ? "main" : options.projectId || "main");
+    (project?.memoryMode === "global" ? "main" : projectId || "main");
 
-  const projectSkillPaths = options.projectId
-    ? (await loadProjectSkillsMetadata(options.projectId)).map((skill) =>
+  const projectSkillPaths = projectId
+    ? (await loadProjectSkillsMetadata(projectId)).map((skill) =>
         path.join(skill.skillDir, "SKILL.md")
       )
     : [];
+  const corePiToolsOnly = options.corePiToolsOnly !== false;
 
   const projectContext = buildEggentProjectContext({
-    projectId: options.projectId,
+    projectId,
     projectName: project?.name,
     projectDescription: project?.description,
     projectInstructions: project?.instructions,
     memorySubdir,
     cwd,
+    runtimeModel: configuredModel
+      ? {
+          provider: configuredModel.provider,
+          id: configuredModel.id,
+          name: configuredModel.name,
+        }
+      : undefined,
   });
 
   const resourceLoader = new DefaultResourceLoader({
     cwd,
     agentDir,
     additionalSkillPaths: projectSkillPaths,
+    noExtensions: corePiToolsOnly,
+    noSkills: corePiToolsOnly,
+    noPromptTemplates: corePiToolsOnly,
+    noThemes: corePiToolsOnly,
     agentsFilesOverride: (current) => ({
       agentsFiles: [
         ...current.agentsFiles,
         {
-          path: options.projectId
-            ? path.join(getWorkDir(options.projectId), "context.md")
-            : path.join(process.cwd(), "EGGENT_GLOBAL_CONTEXT.md"),
+          path: projectId
+            ? path.join(getWorkDir(projectId), "context.md")
+            : path.join(getWorkDir(null), "ORCHESTRATOR.md"),
           content: projectContext,
         },
       ],
@@ -149,7 +190,7 @@ export async function createEggentPiSession(options: PiSessionOptions = {}) {
     ? { tools: [], cleanup: async () => {} }
     : await createEggentPiTools({
         chatId: options.chatId,
-        projectId: options.projectId,
+        projectId,
         cwd,
         memorySubdir,
 

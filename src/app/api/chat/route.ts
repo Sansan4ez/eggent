@@ -20,7 +20,10 @@ export async function POST(req: NextRequest) {
   try {
     await ensureCronSchedulerStarted();
     const body = await req.json();
-    const { chatId, projectId, currentPath } = body;
+    const { chatId, currentPath } = body;
+    const projectId = typeof body.projectId === "string" && body.projectId.trim() && body.projectId !== "none"
+      ? body.projectId.trim()
+      : undefined;
     let message: string | undefined = body.message;
 
     // Support AI SDK's DefaultChatTransport format which sends a `messages` array

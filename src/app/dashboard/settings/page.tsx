@@ -7,7 +7,7 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Check, KeyRound, Loader2, Moon, Save, ShieldCheck, Sun, Trash2 } from "lucide-react";
+import { Check, ExternalLink, KeyRound, Loader2, LogOut, Moon, PlugZap, Save, ShieldCheck, Sun } from "lucide-react";
 import { updateSettingsByPath } from "@/lib/settings/update-settings-path";
 import type { AppSettings } from "@/lib/types";
 
@@ -15,9 +15,29 @@ interface PiProviderState {
   id: string;
   name?: string;
   stored: boolean;
+  credentialType?: "api_key" | "oauth";
   modelCount: number;
   availableModelCount: number;
-  auth?: { configured?: boolean; source?: string };
+  auth?: { configured?: boolean; source?: string; label?: string };
+}
+
+interface PiOAuthProviderState {
+  id: string;
+  name: string;
+  usesCallbackServer?: boolean;
+}
+
+interface PiApiKeyProviderState {
+  id: string;
+  name?: string;
+  auth?: { configured?: boolean; source?: string; label?: string };
+}
+
+interface PiCredentialState {
+  provider: string;
+  providerName?: string;
+  type: "api_key" | "oauth";
+  auth?: { configured?: boolean; source?: string; label?: string };
 }
 
 interface PiModelState {
@@ -40,10 +60,40 @@ interface PiState {
     defaultModel?: string;
     defaultThinkingLevel?: string;
   };
+  current?: {
+    provider?: string;
+    providerName?: string;
+    model?: PiModelState;
+    auth?: { configured?: boolean; source?: string; label?: string };
+    credentialType?: "api_key" | "oauth";
+    stored?: boolean;
+  } | null;
+  oauthProviders: PiOAuthProviderState[];
+  apiKeyProviders: PiApiKeyProviderState[];
+  credentials: PiCredentialState[];
   providers: PiProviderState[];
   models: PiModelState[];
   availableModels: PiModelState[];
 }
+
+type LoginEvent =
+  | { id: string; type: "auth_url"; url: string; instructions?: string }
+  | { id: string; type: "device_code"; userCode: string; verificationUri: string; intervalSeconds?: number; expiresInSeconds?: number }
+  | { id: string; type: "progress"; message: string }
+  | { id: string; type: "prompt"; promptId: string; message: string; placeholder?: string; allowEmpty?: boolean; manualCode?: boolean }
+  | { id: string; type: "select"; promptId: string; message: string; options: Array<{ id: string; label: string }> }
+  | { id: string; type: "completed" }
+  | { id: string; type: "error"; message: string };
+
+interface LoginJobState {
+  id: string;
+  provider: string;
+  status: "running" | "completed" | "error" | "cancelled";
+  error?: string;
+  events: LoginEvent[];
+}
+
+const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh"];
 
 export default function SettingsPage() {
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -54,11 +104,16 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [piLoading, setPiLoading] = useState(true);
   const [piError, setPiError] = useState<string | null>(null);
-  const [provider, setProvider] = useState("anthropic");
   const [apiKey, setApiKey] = useState("");
+  const [apiKeyEnv, setApiKeyEnv] = useState("");
   const [savingProvider, setSavingProvider] = useState(false);
+  const [oauthSaving, setOauthSaving] = useState(false);
+  const [oauthJob, setOauthJob] = useState<LoginJobState | null>(null);
+  const [promptInputs, setPromptInputs] = useState<Record<string, string>>({});
+  const [answeredPrompts, setAnsweredPrompts] = useState<Record<string, true>>({});
   const [savingModelsJson, setSavingModelsJson] = useState(false);
   const [savingDefaultModel, setSavingDefaultModel] = useState(false);
+  const [defaultProviderSelection, setDefaultProviderSelection] = useState("");
   const [defaultModelSelection, setDefaultModelSelection] = useState("");
   const [defaultThinkingLevel, setDefaultThinkingLevel] = useState("high");
   const [authUsername, setAuthUsername] = useState("");
@@ -82,6 +137,27 @@ export default function SettingsPage() {
       .finally(() => setLoading(false));
   }, []);
 
+  const oauthJobId = oauthJob?.id;
+  const oauthJobStatus = oauthJob?.status;
+
+  useEffect(() => {
+    if (!oauthJobId || oauthJobStatus !== "running") return;
+    const timer = window.setInterval(async () => {
+      const res = await fetch(`/api/pi/auth/login?id=${encodeURIComponent(oauthJobId)}`, { cache: "no-store" });
+      const json = await res.json().catch(() => null) as LoginJobState | { error?: string } | null;
+      if (!res.ok || !json || ("error" in json && !("status" in json))) {
+        setPiError(json?.error || "Failed to poll pi login");
+        return;
+      }
+      const next = json as LoginJobState;
+      setOauthJob(next);
+      if (next.status !== "running") {
+        await loadPiState();
+      }
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [oauthJobId, oauthJobStatus]);
+
   const darkMode = settings?.general.darkMode ?? false;
 
   useEffect(() => {
@@ -101,7 +177,13 @@ export default function SettingsPage() {
       setPiState(stateJson);
       const defaultProvider = typeof stateJson?.settings?.defaultProvider === "string" ? stateJson.settings.defaultProvider : "";
       const defaultModel = typeof stateJson?.settings?.defaultModel === "string" ? stateJson.settings.defaultModel : "";
-      setDefaultModelSelection(defaultProvider && defaultModel ? `${defaultProvider}/${defaultModel}` : "");
+      const availablePiModels = Array.isArray(stateJson?.availableModels) ? stateJson.availableModels as PiModelState[] : [];
+      const firstAvailableModel = availablePiModels[0];
+      const defaultProviderHasModels = Boolean(defaultProvider && availablePiModels.some((model) => model.provider === defaultProvider));
+      const providerSelection = defaultProviderHasModels ? defaultProvider : firstAvailableModel?.provider || "";
+      const firstProviderModel = availablePiModels.find((model) => model.provider === providerSelection);
+      setDefaultProviderSelection(providerSelection);
+      setDefaultModelSelection(defaultProviderHasModels && defaultModel ? defaultModel : firstProviderModel?.id || "");
       setDefaultThinkingLevel(typeof stateJson?.settings?.defaultThinkingLevel === "string" ? stateJson.settings.defaultThinkingLevel : "high");
       const raw = typeof rawJson.content === "string" ? rawJson.content : "";
       setModelsJson(raw);
@@ -129,18 +211,32 @@ export default function SettingsPage() {
   }
 
   async function saveProviderKey() {
-    if (!provider.trim() || !apiKey.trim()) return;
+    const providerId = defaultProviderSelection.trim();
+    if (!providerId || !apiKey.trim()) return;
+    let env: Record<string, string> | undefined;
+    if (apiKeyEnv.trim()) {
+      try {
+        const parsed = JSON.parse(apiKeyEnv) as unknown;
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error();
+        env = Object.fromEntries(Object.entries(parsed).filter(([, value]) => typeof value === "string")) as Record<string, string>;
+      } catch {
+        setPiError("Provider env must be a JSON object, for example {\"CLOUDFLARE_ACCOUNT_ID\":\"...\"}.");
+        return;
+      }
+    }
     try {
       setSavingProvider(true);
       setPiError(null);
       const res = await fetch("/api/pi/auth", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider: provider.trim(), apiKey: apiKey.trim() }),
+        body: JSON.stringify({ provider: providerId, apiKey: apiKey.trim(), env }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed to save provider key");
       setApiKey("");
+      setApiKeyEnv("");
+      setPiState(json);
       await loadPiState();
     } catch (error) {
       setPiError(error instanceof Error ? error.message : "Failed to save provider key");
@@ -149,33 +245,83 @@ export default function SettingsPage() {
     }
   }
 
-  async function deleteProviderKey(providerId: string) {
-    if (!confirm(`Remove pi credentials for ${providerId}?`)) return;
+  async function logoutProvider(providerId: string) {
+    if (!confirm(`Run pi /logout for ${providerId}? Stored credentials will be removed from auth.json.`)) return;
     const res = await fetch(`/api/pi/auth?provider=${encodeURIComponent(providerId)}`, { method: "DELETE" });
     const json = await res.json().catch(() => null);
     if (!res.ok) {
-      setPiError(json?.error || "Failed to remove provider key");
+      setPiError(json?.error || "Failed to logout provider");
       return;
     }
+    setPiState(json);
     await loadPiState();
   }
 
+  async function startOAuthLogin() {
+    const providerId = defaultProviderSelection.trim();
+    if (!providerId) return;
+    try {
+      setOauthSaving(true);
+      setPiError(null);
+      setOauthJob(null);
+      setPromptInputs({});
+      setAnsweredPrompts({});
+      const res = await fetch("/api/pi/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ provider: providerId }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Failed to start pi login");
+      setOauthJob(json);
+    } catch (error) {
+      setPiError(error instanceof Error ? error.message : "Failed to start pi login");
+    } finally {
+      setOauthSaving(false);
+    }
+  }
+
+  async function answerLoginPrompt(promptId: string, value: string) {
+    if (!oauthJob) return;
+    const res = await fetch("/api/pi/auth/login", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: oauthJob.id, promptId, value }),
+    });
+    const json = await res.json().catch(() => null);
+    if (!res.ok) {
+      setPiError(json?.error || "Failed to answer pi login prompt");
+      return;
+    }
+    setAnsweredPrompts((prev) => ({ ...prev, [promptId]: true }));
+    setOauthJob(json);
+  }
+
+  async function cancelOAuthLogin() {
+    if (!oauthJob) return;
+    await fetch(`/api/pi/auth/login?id=${encodeURIComponent(oauthJob.id)}`, { method: "DELETE" }).catch(() => null);
+    setOauthJob((prev) => prev ? { ...prev, status: "cancelled", error: "Login cancelled" } : prev);
+  }
+
+  function handleDefaultProviderChange(providerId: string) {
+    setDefaultProviderSelection(providerId);
+    const firstModel = (piState?.availableModels ?? [])
+      .filter((model) => model.provider === providerId)
+      .sort((a, b) => a.id.localeCompare(b.id))[0];
+    setDefaultModelSelection(firstModel?.id || "");
+  }
+
   async function saveDefaultModel() {
-    const slash = defaultModelSelection.indexOf("/");
-    if (slash <= 0) return;
-    const providerId = defaultModelSelection.slice(0, slash);
-    const modelId = defaultModelSelection.slice(slash + 1);
+    const providerId = defaultProviderSelection.trim();
+    const modelId = defaultModelSelection.trim();
+    if (!providerId || !modelId) return;
     try {
       setSavingDefaultModel(true);
       setPiError(null);
       const res = await fetch("/api/pi/settings", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          provider: providerId,
-          model: modelId,
-          thinkingLevel: defaultThinkingLevel,
-        }),
+        body: JSON.stringify({ provider: providerId, model: modelId, thinkingLevel: defaultThinkingLevel }),
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Failed to save pi default model");
@@ -242,12 +388,28 @@ export default function SettingsPage() {
     }
   }
 
-  const modelChoices = useMemo(() => {
-    const source = piState?.availableModels.length ? piState.availableModels : piState?.models ?? [];
-    return source.slice().sort((a, b) => `${a.provider}/${a.id}`.localeCompare(`${b.provider}/${b.id}`));
+  const providerChoices = useMemo(() => {
+    return (piState?.providers ?? [])
+      .map((item) => ({ id: item.id, name: item.name || item.id, availableModelCount: item.availableModelCount }))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [piState]);
-  const availableModels = useMemo(() => piState?.availableModels.slice(0, 80) ?? [], [piState]);
+
+  const modelChoices = useMemo(() => {
+    return (piState?.availableModels ?? [])
+      .filter((model) => model.provider === defaultProviderSelection)
+      .sort((a, b) => a.id.localeCompare(b.id));
+  }, [defaultProviderSelection, piState]);
   const modelsJsonDirty = modelsJson !== modelsJsonSaved;
+  const currentCredential = piState?.current?.provider
+    ? piState.credentials.find((item) => item.provider === piState.current?.provider)
+    : undefined;
+  const selectedProviderState = piState?.providers.find((item) => item.id === defaultProviderSelection);
+  const selectedOauthProvider = piState?.oauthProviders.find((item) => item.id === defaultProviderSelection);
+  const selectedApiKeyProvider = piState?.apiKeyProviders.find((item) => item.id === defaultProviderSelection);
+  const selectedProviderName = selectedProviderState?.name || selectedOauthProvider?.name || selectedApiKeyProvider?.name || defaultProviderSelection;
+  const selectedProviderConnected = Boolean(defaultProviderSelection && modelChoices.length > 0);
+  const selectedProviderHasStoredCredential = Boolean(piState?.credentials.some((item) => item.provider === defaultProviderSelection));
+  const currentModelIsAvailable = Boolean(piState?.current?.model?.available);
 
   if (loading || !settings) {
     return (
@@ -271,7 +433,7 @@ export default function SettingsPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-2xl font-semibold">Settings</h2>
-                  <p className="text-sm text-muted-foreground">Eggent uses pi&apos;s own auth.json and models.json for model connections.</p>
+                  <p className="text-sm text-muted-foreground">Manage Eggent and pi model/auth settings from one UI.</p>
                 </div>
                 <Button onClick={handleSaveSettings} className="gap-2">
                   {saved ? <Check className="size-4" /> : <Save className="size-4" />}
@@ -279,115 +441,165 @@ export default function SettingsPage() {
                 </Button>
               </div>
 
-              <section className="rounded-xl border bg-card p-5 space-y-4">
+              <section className="rounded-xl border bg-card p-5 space-y-5">
                 <div className="flex items-center gap-2">
-                  <KeyRound className="size-5 text-primary" />
-                  <h3 className="text-lg font-semibold">pi model connections</h3>
+                  <PlugZap className="size-5 text-primary" />
+                  <h3 className="text-lg font-semibold">pi models and login</h3>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Credentials are stored by pi in <code>{piState?.authFile || "~/.pi/agent/auth.json"}</code>. Custom providers/models live in <code>{piState?.modelsFile || "~/.pi/agent/models.json"}</code>.
-                  OAuth subscription logins can still be created with pi CLI <code>/login</code>; Eggent will read them here.
+                  This mirrors pi&apos;s <code>/login</code>, <code>/model</code>, and <code>/logout</code> flow. Credentials are stored in <code>{piState?.authFile || "~/.pi/agent/auth.json"}</code>; custom providers live in <code>{piState?.modelsFile || "~/.pi/agent/models.json"}</code>.
                 </p>
                 {piError ? <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{piError}</div> : null}
 
-                <div className="rounded-lg border p-4 space-y-3">
-                  <div>
-                    <div className="text-xs font-mono text-muted-foreground">settings.json</div>
-                    <h4 className="font-medium">Global default model</h4>
-                    <p className="text-xs text-muted-foreground">
-                      Stored in pi global settings. Project <code>model.json</code> can still override it.
-                    </p>
-                  </div>
-                  <div className="grid gap-3 md:grid-cols-[1fr_180px_auto]">
-                    <select
-                      value={defaultModelSelection}
-                      onChange={(event) => setDefaultModelSelection(event.target.value)}
-                      className="rounded-md border bg-background px-3 py-2 text-sm"
-                      disabled={piLoading || modelChoices.length === 0}
-                    >
-                      {!defaultModelSelection ? <option value="">Select pi model...</option> : null}
-                      {modelChoices.map((model) => (
-                        <option key={`${model.provider}/${model.id}`} value={`${model.provider}/${model.id}`}>
-                          {model.provider}/{model.id}{model.available ? "" : " (auth missing)"}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      value={defaultThinkingLevel}
-                      onChange={(event) => setDefaultThinkingLevel(event.target.value)}
-                      className="rounded-md border bg-background px-3 py-2 text-sm"
-                    >
-                      {["off", "minimal", "low", "medium", "high", "xhigh"].map((level) => (
-                        <option key={level} value={level}>{level}</option>
-                      ))}
-                    </select>
-                    <Button onClick={saveDefaultModel} disabled={savingDefaultModel || !defaultModelSelection} className="gap-2">
-                      {savingDefaultModel ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-                      Save default
-                    </Button>
-                  </div>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-[220px_1fr_auto]">
-                  <Input value={provider} onChange={(event) => setProvider(event.target.value)} placeholder="provider, e.g. anthropic" />
-                  <Input value={apiKey} onChange={(event) => setApiKey(event.target.value)} type="password" placeholder="API key stored in pi auth.json" />
-                  <Button onClick={saveProviderKey} disabled={savingProvider || !provider.trim() || !apiKey.trim()} className="gap-2">
-                    {savingProvider ? <Loader2 className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
-                    Save key
-                  </Button>
-                </div>
-
                 {piLoading ? <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Loading pi providers...</div> : null}
-                {piState ? (
-                  <div className="grid gap-4 lg:grid-cols-2">
-                    <div className="rounded-lg border">
-                      <div className="border-b px-3 py-2 text-sm font-medium">Providers</div>
-                      <div className="max-h-96 divide-y overflow-auto">
-                        {piState.providers.map((item) => (
-                          <div key={item.id} className="flex items-center justify-between gap-3 p-3 text-sm">
-                            <div className="min-w-0">
-                              <div className="font-medium">{item.name || item.id}</div>
-                              <div className="text-xs text-muted-foreground">
-                                {item.availableModelCount}/{item.modelCount} models available · auth {item.auth?.configured ? item.auth.source || "configured" : "missing"}
-                              </div>
-                            </div>
-                            {item.stored ? (
-                              <Button size="sm" variant="ghost" className="text-destructive" onClick={() => deleteProviderKey(item.id)}>
-                                <Trash2 className="size-4" />
-                              </Button>
-                            ) : null}
-                          </div>
-                        ))}
+
+                {currentModelIsAvailable ? (
+                  <div className="rounded-lg border p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-xs font-mono text-muted-foreground">current pi default</div>
+                        <h4 className="font-medium">{piState?.current?.providerName || piState?.current?.provider}</h4>
+                        <p className="text-sm text-muted-foreground">
+                          <span className="font-mono">{piState?.current?.model?.id}</span>
+                          {currentCredential?.type ? ` · ${currentCredential.type === "oauth" ? "OAuth/subscription" : "API key"}` : ""}
+                          {piState?.settings?.defaultThinkingLevel ? ` · thinking ${piState.settings.defaultThinkingLevel}` : ""}
+                        </p>
                       </div>
-                    </div>
-                    <div className="rounded-lg border">
-                      <div className="border-b px-3 py-2 text-sm font-medium">Available pi models</div>
-                      <div className="max-h-96 divide-y overflow-auto">
-                        {availableModels.length === 0 ? <div className="p-3 text-sm text-muted-foreground">No authenticated pi models yet.</div> : null}
-                        {availableModels.map((model) => (
-                          <div key={`${model.provider}/${model.id}`} className="p-3 text-sm">
-                            <div className="font-medium">{model.provider}/{model.id}</div>
-                            <div className="text-xs text-muted-foreground">{model.name || ""}{model.reasoning ? " · reasoning" : ""}</div>
-                          </div>
-                        ))}
-                      </div>
+                      {piState?.current?.provider && piState.current.stored ? (
+                        <Button variant="outline" className="gap-2 text-destructive" onClick={() => logoutProvider(piState.current?.provider || "")}>
+                          <LogOut className="size-4" />
+                          Logout
+                        </Button>
+                      ) : null}
                     </div>
                   </div>
                 ) : null}
 
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <div>
-                      <div className="text-xs font-mono text-muted-foreground">models.json</div>
-                      <h4 className="font-medium">pi custom providers and models</h4>
-                    </div>
-                    <Button size="sm" onClick={saveModelsJson} disabled={savingModelsJson || !modelsJsonDirty}>
-                      {savingModelsJson ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-                      Save models.json
-                    </Button>
+                <div className="rounded-lg border p-4 space-y-3">
+                  <div>
+                    <div className="text-xs font-mono text-muted-foreground">provider</div>
+                    <h4 className="font-medium">Choose provider</h4>
+                    <p className="text-xs text-muted-foreground">Pick one provider first. Eggent will only show models for that provider.</p>
                   </div>
-                  <textarea value={modelsJson} onChange={(event) => setModelsJson(event.target.value)} rows={14} className="w-full rounded-lg border bg-muted/30 p-3 text-xs font-mono" />
+                  <select
+                    value={defaultProviderSelection}
+                    onChange={(event) => handleDefaultProviderChange(event.target.value)}
+                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                    disabled={piLoading || providerChoices.length === 0}
+                  >
+                    <option value="">Select provider...</option>
+                    {providerChoices.map((item) => (
+                      <option key={item.id} value={item.id}>{item.name}</option>
+                    ))}
+                  </select>
                 </div>
+
+                {defaultProviderSelection ? (
+                  <div className="rounded-lg border p-4 space-y-4">
+                    <div>
+                      <div className="text-xs font-mono text-muted-foreground">/login</div>
+                      <h4 className="font-medium">Connect {selectedProviderName}</h4>
+                      <p className="text-xs text-muted-foreground">
+                        {selectedProviderConnected
+                          ? "This provider already has available models. You can still save or replace the API key used by pi."
+                          : "After this provider is connected, its current pi models will appear here."}
+                      </p>
+                    </div>
+
+                    {selectedOauthProvider && !selectedProviderConnected ? (
+                      <Button onClick={startOAuthLogin} disabled={oauthSaving} className="gap-2">
+                        {oauthSaving ? <Loader2 className="size-4 animate-spin" /> : <PlugZap className="size-4" />}
+                        Login with subscription
+                      </Button>
+                    ) : null}
+
+                    {selectedApiKeyProvider ? (
+                      <div className="space-y-3">
+                        <div className="grid gap-3 md:grid-cols-[1fr_auto]">
+                          <Input value={apiKey} onChange={(event) => setApiKey(event.target.value)} type="password" placeholder={`API key for ${selectedProviderName}`} />
+                          <Button onClick={saveProviderKey} disabled={savingProvider || !apiKey.trim()} className="gap-2">
+                            {savingProvider ? <Loader2 className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
+                            {selectedProviderHasStoredCredential ? "Replace key" : "Save key"}
+                          </Button>
+                        </div>
+                        <textarea value={apiKeyEnv} onChange={(event) => setApiKeyEnv(event.target.value)} rows={4} className="w-full rounded-lg border bg-muted/30 p-3 text-xs font-mono" placeholder={'Optional provider-scoped env JSON, e.g. {"CLOUDFLARE_ACCOUNT_ID":"..."}'} />
+                      </div>
+                    ) : null}
+
+                    {!selectedOauthProvider && !selectedApiKeyProvider ? (
+                      <p className="text-sm text-muted-foreground">This provider does not expose a login method through pi.</p>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {oauthJob ? (
+                  <div className="rounded-md border bg-muted/20 p-3 space-y-3 text-sm">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>Status: <span className="font-medium">{oauthJob.status}</span>{oauthJob.error ? <span className="text-destructive"> · {oauthJob.error}</span> : null}</div>
+                      {oauthJob.status === "running" ? <Button size="sm" variant="outline" onClick={cancelOAuthLogin}>Cancel</Button> : null}
+                    </div>
+                    {oauthJob.events.map((event) => {
+                      if (event.type === "auth_url") return <div key={event.id} className="space-y-1"><p>{event.instructions || "Open this URL to authenticate:"}</p><a href={event.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-primary underline"><ExternalLink className="size-3" />Open auth URL</a><p className="break-all text-xs text-muted-foreground">{event.url}</p></div>;
+                      if (event.type === "device_code") return <div key={event.id} className="rounded-md bg-background p-3"><p>Open <a href={event.verificationUri} target="_blank" rel="noreferrer" className="text-primary underline">{event.verificationUri}</a> and enter code:</p><div className="mt-2 font-mono text-lg font-semibold tracking-widest">{event.userCode}</div></div>;
+                      if (event.type === "progress") return <p key={event.id} className="text-muted-foreground">{event.message}</p>;
+                      if (event.type === "select" && oauthJob.status === "running" && !answeredPrompts[event.promptId]) return <div key={event.id} className="space-y-2"><p className="font-medium">{event.message}</p><div className="flex flex-wrap gap-2">{event.options.map((option) => <Button key={option.id} size="sm" variant="outline" onClick={() => answerLoginPrompt(event.promptId, option.id)}>{option.label}</Button>)}</div></div>;
+                      if (event.type === "prompt" && oauthJob.status === "running" && !answeredPrompts[event.promptId]) return <div key={event.id} className="space-y-2"><Label>{event.message}</Label><div className="grid gap-2 md:grid-cols-[1fr_auto]"><Input value={promptInputs[event.promptId] || ""} placeholder={event.placeholder || ""} onChange={(inputEvent) => setPromptInputs((prev) => ({ ...prev, [event.promptId]: inputEvent.target.value }))} /><Button onClick={() => answerLoginPrompt(event.promptId, promptInputs[event.promptId] || "")} disabled={!event.allowEmpty && !promptInputs[event.promptId]?.trim()}>Send</Button></div></div>;
+                      if (event.type === "completed") return <p key={event.id} className="text-emerald-600">Login completed. pi auth.json was updated.</p>;
+                      if (event.type === "error") return <p key={event.id} className="text-destructive">{event.message}</p>;
+                      return null;
+                    })}
+                  </div>
+                ) : null}
+
+                {selectedProviderConnected ? (
+                  <div className="rounded-lg border p-4 space-y-3">
+                    <div>
+                      <div className="text-xs font-mono text-muted-foreground">/model</div>
+                      <h4 className="font-medium">Choose {selectedProviderName} model</h4>
+                      <p className="text-xs text-muted-foreground">Only models currently available for this provider are shown.</p>
+                    </div>
+                    <div className="grid gap-3 md:grid-cols-[1fr_160px_auto]">
+                      <select value={defaultModelSelection} onChange={(event) => setDefaultModelSelection(event.target.value)} className="rounded-md border bg-background px-3 py-2 text-sm">
+                        {modelChoices.map((model) => (
+                          <option key={`${model.provider}/${model.id}`} value={model.id}>
+                            {model.id}{model.name && model.name !== model.id ? ` · ${model.name}` : ""}
+                          </option>
+                        ))}
+                      </select>
+                      <select value={defaultThinkingLevel} onChange={(event) => setDefaultThinkingLevel(event.target.value)} className="rounded-md border bg-background px-3 py-2 text-sm">
+                        {thinkingLevels.map((level) => <option key={level} value={level}>{level}</option>)}
+                      </select>
+                      <Button onClick={saveDefaultModel} disabled={savingDefaultModel || !defaultModelSelection} className="gap-2">
+                        {savingDefaultModel ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+                        Save model
+                      </Button>
+                    </div>
+                    {selectedProviderState?.stored ? (
+                      <Button variant="ghost" className="gap-2 px-0 text-destructive" onClick={() => logoutProvider(defaultProviderSelection)}>
+                        <LogOut className="size-4" /> Logout from {selectedProviderName}
+                      </Button>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {defaultProviderSelection ? (
+                  <details className="rounded-lg border p-4">
+                    <summary className="cursor-pointer text-sm font-medium">Advanced: edit pi models.json</summary>
+                    <div className="mt-4 space-y-2">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-xs font-mono text-muted-foreground">models.json</div>
+                          <h4 className="font-medium">pi custom providers and models</h4>
+                        </div>
+                        <Button size="sm" onClick={saveModelsJson} disabled={savingModelsJson || !modelsJsonDirty}>
+                          {savingModelsJson ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+                          Save models.json
+                        </Button>
+                      </div>
+                      <textarea value={modelsJson} onChange={(event) => setModelsJson(event.target.value)} rows={14} className="w-full rounded-lg border bg-muted/30 p-3 text-xs font-mono" />
+                    </div>
+                  </details>
+                ) : null}
               </section>
 
               <section className="rounded-xl border bg-card p-5 space-y-4">

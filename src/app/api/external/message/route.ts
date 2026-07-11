@@ -70,7 +70,9 @@ export async function POST(req: NextRequest) {
         typeof body.sessionId === "string" ? body.sessionId : "",
       message: typeof body.message === "string" ? body.message : "",
       projectId:
-        typeof body.projectId === "string" ? body.projectId : undefined,
+        typeof body.projectId === "string" && body.projectId.trim() && body.projectId !== "none"
+          ? body.projectId.trim()
+          : undefined,
       chatId: typeof body.chatId === "string" ? body.chatId : undefined,
       currentPath:
         typeof body.currentPath === "string" ? body.currentPath : undefined,

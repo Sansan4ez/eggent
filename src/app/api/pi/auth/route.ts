@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPiAuthStorage, getPiModelsState } from "@/lib/pi/config-store";
+import { getPiAuthStorage, getPiModelsState, getPiSettingsState, setPiDefaultToFirstAvailableModel } from "@/lib/pi/config-store";
 
 export async function GET() {
   const state = await getPiModelsState();
@@ -28,6 +28,7 @@ export async function POST(req: NextRequest) {
 
   const authStorage = getPiAuthStorage();
   await authStorage.set(provider, env ? { type: "api_key", key: apiKey, env } : { type: "api_key", key: apiKey });
+  await setPiDefaultToFirstAvailableModel(provider);
   return NextResponse.json(await getPiModelsState());
 }
 
@@ -36,7 +37,11 @@ export async function DELETE(req: NextRequest) {
   if (!provider) {
     return NextResponse.json({ error: "provider query param is required" }, { status: 400 });
   }
+  const settings = await getPiSettingsState();
   const authStorage = getPiAuthStorage();
-  await authStorage.remove(provider);
+  await authStorage.logout(provider);
+  if (settings.defaultProvider === provider) {
+    await setPiDefaultToFirstAvailableModel();
+  }
   return NextResponse.json(await getPiModelsState());
 }
