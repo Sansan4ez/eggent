@@ -4,18 +4,10 @@ import type { McpServerConfig } from "@/lib/types";
 import { getPipelineDefinitions } from "@/lib/pipelines/store";
 import { startPipelineRunInBackground } from "@/lib/pipelines/runner";
 import {
-  callMcpTool,
-  closeMcpConnection,
-  connectMcpServer,
-  listMcpTools,
-  type McpConnection,
-} from "@/lib/mcp/client";
-import {
   createProject,
   createSkill,
   deleteProjectMcpServer,
   getAllProjects,
-  loadProjectMcpServers,
   searchProjectMemory,
   appendProjectMemory,
   deleteProjectMemoryMatches,
@@ -29,79 +21,6 @@ function textResult(text: string, details: Record<string, unknown> = {}) {
   };
 }
 
-function safeToolName(value: string): string {
-  return value.replace(/[^A-Za-z0-9_]/g, "_").replace(/^([^A-Za-z_])/, "_$1");
-}
-
-function normalizeArgs(params: Record<string, unknown>): Record<string, unknown> {
-  const nested = params.arguments;
-  if (nested && typeof nested === "object" && !Array.isArray(nested)) {
-    return nested as Record<string, unknown>;
-  }
-  const { arguments: _ignored, ...rest } = params;
-  return rest;
-}
-
-async function createMcpPiTools(projectId?: string): Promise<{
-  tools: ToolDefinition[];
-  cleanup: () => Promise<void>;
-}> {
-  if (!projectId) return { tools: [], cleanup: async () => {} };
-
-  const config = await loadProjectMcpServers(projectId);
-  if (!config?.servers?.length) return { tools: [], cleanup: async () => {} };
-
-  const connections: McpConnection[] = [];
-  const tools: ToolDefinition[] = [];
-
-  for (const server of config.servers) {
-    const conn = await connectMcpServer(server);
-    if (!conn) continue;
-    connections.push(conn);
-
-    const mcpTools = await listMcpTools(conn.client);
-    for (const mcpTool of mcpTools) {
-      const toolName = safeToolName(`eggent_mcp_${server.id}_${mcpTool.name}`);
-      const schemaHint = mcpTool.inputSchema
-        ? ` MCP input schema: ${JSON.stringify(mcpTool.inputSchema)}`
-        : "";
-      tools.push(
-        defineTool({
-          name: toolName,
-          label: `MCP ${server.id}: ${mcpTool.name}`,
-          description:
-            `[Eggent project MCP ${server.id}] ${mcpTool.description || mcpTool.name}.` +
-            `${schemaHint} Pass arguments as a JSON object in the arguments field.`,
-          parameters: Type.Object({
-            arguments: Type.Optional(
-              Type.Record(Type.String(), Type.Any(), {
-                description: "Arguments for the underlying MCP tool.",
-              })
-            ),
-          }),
-          execute: async (_toolCallId, params) => {
-            const args = normalizeArgs(params as Record<string, unknown>);
-            const output = await callMcpTool(conn.client, mcpTool.name, args);
-            return textResult(output, {
-              projectId,
-              serverId: server.id,
-              mcpTool: mcpTool.name,
-              args,
-            });
-          },
-        })
-      );
-    }
-  }
-
-  return {
-    tools,
-    cleanup: async () => {
-      await Promise.all(connections.map((conn) => closeMcpConnection(conn)));
-    },
-  };
-}
-
 export async function createEggentPiTools(options: {
   chatId?: string;
   projectId?: string;
@@ -109,13 +28,12 @@ export async function createEggentPiTools(options: {
   memorySubdir?: string;
 } = {}): Promise<{ tools: ToolDefinition[]; cleanup: () => Promise<void> }> {
   const memoryProjectId = options.projectId;
-  const mcp = await createMcpPiTools(options.projectId);
 
   const tools: ToolDefinition[] = [
     defineTool({
       name: "list_projects",
       label: "List Eggent Projects",
-      description: "List Eggent projects. Each project is a directory-backed pi agent configuration with context.md, memory.md, skills/, mcp.json, cron.json, and model.json.",
+      description: "List Eggent projects. Each project is a directory-backed pi agent configuration with context.md, memory.md, skills/, .mcp.json, cron.json, and model.json.",
       parameters: Type.Object({}),
       execute: async () => {
         const projects = await getAllProjects();
@@ -198,7 +116,7 @@ export async function createEggentPiTools(options: {
     defineTool({
       name: "upsert_mcp_server",
       label: "Upsert Eggent Project MCP Server",
-      description: "Create or update an MCP server on an Eggent project. MCP tools are exposed to pi as eggent_mcp_* tools when the project runs.",
+      description: "Create or update an MCP server in an Eggent project's .mcp.json. MCP tools are available through pi-mcp-adapter's mcp proxy tool when the project runs.",
       parameters: Type.Object({
         project_id: Type.Optional(Type.String({ description: "Project id. Defaults to current project." })),
         id: Type.String({ description: "MCP server id." }),
@@ -354,8 +272,7 @@ export async function createEggentPiTools(options: {
         );
       },
     }),
-    ...mcp.tools,
   ];
 
-  return { tools, cleanup: mcp.cleanup };
+  return { tools, cleanup: async () => {} };
 }

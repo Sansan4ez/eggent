@@ -256,7 +256,7 @@ export interface McpServerConfigHttp {
 }
 
 /**
- * Cursor-compatible format for data/projects/<projectId>/mcp.json.
+ * Cursor-compatible format for data/projects/<projectId>/.mcp.json.
  * Key = server id; value with `command` = stdio, with `url` = http.
  * @see https://docs.cursor.com/context/model-context-protocol
  */

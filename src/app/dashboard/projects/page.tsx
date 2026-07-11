@@ -9,7 +9,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TelegramIntegrationManager } from "@/components/telegram-integration-manager";
 import {
-  AlertTriangle,
   Check,
   FolderOpen,
   Loader2,
@@ -106,8 +105,8 @@ function ProjectsPageClient() {
   const [installingSkill, setInstallingSkill] = useState<string | null>(null);
   const [skillsStatus, setSkillsStatus] = useState<string | null>(null);
 
-  const forceCreateVisible = projects.length === 0 && onboardingStep !== 0;
-  const isCreateOpen = forceCreateVisible || showCreate;
+  const forceCreateVisible = false;
+  const isCreateOpen = showCreate;
   const onboardingTargetProjectId = useMemo(
     () => onboardingProjectId || projects[0]?.id || "",
     [onboardingProjectId, projects]
@@ -230,29 +229,21 @@ function ProjectsPageClient() {
       return;
     }
 
-    if (projects.length === 0) {
-      if (onboardingStep === -1 || onboardingStep === 0) {
-        setOnboardingStep(1);
-      }
-      setOnboardingProjectId("");
+    if (isOnboardingQuery) {
+      router.replace("/dashboard/settings");
       return;
     }
 
-    if (onboardingStep === 1) {
-      setOnboardingStep(2);
-      return;
-    }
-
-    if (onboardingStep === -1 && isOnboardingQuery) {
-      setOnboardingStep(2);
+    if (onboardingStep !== -1) {
+      setOnboardingStep(-1);
     }
   }, [
     authStatusLoading,
     projectsLoading,
     mustChangeCredentials,
-    projects.length,
     onboardingStep,
     isOnboardingQuery,
+    router,
   ]);
 
   useEffect(() => {
@@ -349,18 +340,8 @@ function ProjectsPageClient() {
       setCredentialPassword("");
       setCredentialPasswordConfirm("");
 
-      if (projects.length === 0) {
-        setOnboardingStep(1);
-      } else {
-        setOnboardingStep(2);
-      }
-
-      const params = new URLSearchParams(searchParams.toString());
-      params.delete("credentials");
-      const nextQuery = params.toString();
-      router.replace(
-        nextQuery ? `/dashboard/projects?${nextQuery}` : "/dashboard/projects"
-      );
+      setOnboardingStep(-1);
+      router.push("/dashboard/settings");
       router.refresh();
     } catch (error) {
       setCredentialsError(
@@ -453,33 +434,14 @@ function ProjectsPageClient() {
               {onboardingStep >= 0 && (
                 <section className="rounded-lg border bg-card p-4 space-y-4">
                   <div className="space-y-2">
-                    <h3 className="font-medium">Project Onboarding</h3>
+                    <h3 className="font-medium">Onboarding</h3>
                     <div className="flex flex-wrap gap-4">
                       <OnboardingStepIndicator
                         step={0}
                         currentStep={onboardingStep}
                         label="Credentials"
                       />
-                      <OnboardingStepIndicator
-                        step={1}
-                        currentStep={onboardingStep}
-                        label="Create project"
-                      />
-                      <OnboardingStepIndicator
-                        step={2}
-                        currentStep={onboardingStep}
-                        label="Model API keys"
-                      />
-                      <OnboardingStepIndicator
-                        step={3}
-                        currentStep={onboardingStep}
-                        label="Telegram"
-                      />
-                      <OnboardingStepIndicator
-                        step={4}
-                        currentStep={onboardingStep}
-                        label="Skills"
-                      />
+                      <div className="text-xs text-muted-foreground">Next: model setup in Settings</div>
                     </div>
                   </div>
 
@@ -550,135 +512,9 @@ function ProjectsPageClient() {
                               Saving...
                             </>
                           ) : (
-                            "Save and Continue"
+                            "Save and Open Settings"
                           )}
                         </Button>
-                      </div>
-                    </div>
-                  )}
-
-                  {onboardingStep === 1 && (
-                    <div className="rounded-lg border p-4">
-                      <p className="text-sm text-muted-foreground">
-                        Step 1: Create your first project to continue onboarding.
-                      </p>
-                    </div>
-                  )}
-
-                  {onboardingStep === 2 && (
-                    <div className="rounded-lg border p-4 space-y-4">
-                      <h4 className="font-medium">Step 2: pi Model Connections</h4>
-                      <p className="text-sm text-muted-foreground">
-                        Eggent no longer stores model provider credentials. It reads pi&apos;s own <code>auth.json</code> and <code>models.json</code>. Configure them in Settings, or continue if pi is already logged in.
-                      </p>
-                      <div className="flex items-center gap-2">
-                        <Button onClick={() => router.push("/dashboard/settings")}>Open Settings</Button>
-                        <Button variant="ghost" onClick={() => setOnboardingStep(3)}>
-                          Continue
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-
-                  {onboardingStep === 3 && (
-                    <div className="rounded-lg border p-4 space-y-4">
-                      <div className="space-y-1">
-                        <h4 className="font-medium">Step 3: Connect Telegram</h4>
-                        <p className="text-sm text-muted-foreground">
-                          Configure bot token and webhook to receive messages in Telegram.
-                        </p>
-                      </div>
-
-                      <TelegramIntegrationManager />
-
-                      <div className="flex items-center gap-2">
-                        <Button variant="outline" onClick={() => setOnboardingStep(2)}>
-                          Back
-                        </Button>
-                        <Button onClick={() => setOnboardingStep(4)}>
-                          Continue to Skills
-                        </Button>
-                      </div>
-                    </div>
-                  )}
-
-                  {onboardingStep === 4 && (
-                    <div className="rounded-lg border p-4 space-y-4">
-                      <div className="space-y-1">
-                        <h4 className="font-medium">Step 4: Add Skills to Project</h4>
-                        <p className="text-sm text-muted-foreground">
-                          Install bundled skills into the project to extend agent capabilities.
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Target project:{" "}
-                          <span className="font-mono">
-                            {onboardingTargetProjectId || "not selected"}
-                          </span>
-                        </p>
-                      </div>
-
-                      {skillsStatus && (
-                        <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
-                          {skillsStatus}
-                        </div>
-                      )}
-
-                      {bundledSkillsLoading ? (
-                        <div className="py-8 flex items-center justify-center text-muted-foreground">
-                          <Loader2 className="size-4 animate-spin mr-2" />
-                          Loading skills...
-                        </div>
-                      ) : bundledSkills.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">
-                          No bundled skills available.
-                        </p>
-                      ) : (
-                        <div className="grid gap-3">
-                          {bundledSkills.map((skill) => (
-                            <div
-                              key={skill.name}
-                              className="rounded-lg border p-3 bg-card flex items-start justify-between gap-3"
-                            >
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <Puzzle className="size-4 text-primary shrink-0" />
-                                  <p className="font-medium truncate">{skill.name}</p>
-                                </div>
-                                <p className="text-sm text-muted-foreground mt-1">
-                                  {skill.description || "No description"}
-                                </p>
-                              </div>
-                              <Button
-                                onClick={() => handleInstallSkill(skill.name)}
-                                disabled={
-                                  !onboardingTargetProjectId ||
-                                  skill.installed ||
-                                  installingSkill === skill.name
-                                }
-                                variant={skill.installed ? "secondary" : "default"}
-                                className="shrink-0"
-                              >
-                                {installingSkill === skill.name ? (
-                                  <>
-                                    <Loader2 className="size-4 animate-spin mr-2" />
-                                    Installing
-                                  </>
-                                ) : skill.installed ? (
-                                  "Installed"
-                                ) : (
-                                  "Install"
-                                )}
-                              </Button>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      <div className="flex items-center gap-2">
-                        <Button variant="outline" onClick={() => setOnboardingStep(3)}>
-                          Back
-                        </Button>
-                        <Button onClick={finishOnboarding}>Finish Onboarding</Button>
                       </div>
                     </div>
                   )}
@@ -688,30 +524,8 @@ function ProjectsPageClient() {
               {isCreateOpen && (
                 <div className="border rounded-lg p-4 bg-card space-y-4">
                   <div className="space-y-1">
-                    <h3 className="font-medium">
-                      {forceCreateVisible
-                        ? "Step 1: Create your first project"
-                        : "Create Project"}
-                    </h3>
-                    {forceCreateVisible && (
-                      <p className="text-sm text-muted-foreground">
-                        This window stays open until a project is created.
-                      </p>
-                    )}
+                    <h3 className="font-medium">Create Project</h3>
                   </div>
-
-                  {forceCreateVisible && (
-                    <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-300">
-                      <div className="flex items-start gap-2">
-                        <AlertTriangle className="mt-0.5 size-4 shrink-0" />
-                        <p>
-                          Warning: This app can execute scripts and shell commands via AI
-                          agents. Some actions may be irreversible (for example, deleting or
-                          overwriting files).
-                        </p>
-                      </div>
-                    </div>
-                  )}
 
                   <div className="space-y-2">
                     <Label htmlFor="name">Project Name</Label>
@@ -774,7 +588,7 @@ function ProjectsPageClient() {
                 {!projectsLoading && projects.length === 0 && (
                   <div className="text-center py-12 text-muted-foreground">
                     <FolderOpen className="size-12 mx-auto mb-4 opacity-50" />
-                    <p>No projects yet. Create one to get started.</p>
+                    <p>No projects yet. You can work in Orchestrator or create a project when needed.</p>
                   </div>
                 )}
 
@@ -796,7 +610,7 @@ function ProjectsPageClient() {
                           </p>
                         )}
                         <div className="flex items-center gap-4 text-xs text-muted-foreground mt-2">
-                          <span className="font-mono">context.md · memory.md · skills/ · mcp.json · cron.json · model.json</span>
+                          <span className="font-mono">context.md · memory.md · skills/ · .mcp.json · cron.json · model.json</span>
                           <span>
                             Created:{" "}
                             {new Date(project.createdAt).toLocaleDateString()}

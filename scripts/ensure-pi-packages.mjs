@@ -1,0 +1,127 @@
+#!/usr/bin/env node
+import fs from "node:fs";
+import path from "node:path";
+import os from "node:os";
+
+const DEFAULT_PACKAGES = [
+  "npm:pi-web-access",
+  "npm:pi-mcp-adapter",
+];
+
+function truthy(value) {
+  return ["1", "true", "yes", "on"].includes(String(value || "").toLowerCase());
+}
+
+function readEnvFile(filePath) {
+  const env = {};
+  if (!fs.existsSync(filePath)) return env;
+  const lines = fs.readFileSync(filePath, "utf-8").split(/\r?\n/);
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const idx = trimmed.indexOf("=");
+    if (idx <= 0) continue;
+    const key = trimmed.slice(0, idx).trim();
+    let value = trimmed.slice(idx + 1).trim();
+    if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+      value = value.slice(1, -1);
+    }
+    env[key] = value;
+  }
+  return env;
+}
+
+function resolveAgentDir() {
+  const envFile = readEnvFile(path.join(process.cwd(), ".env"));
+  const explicit = process.env.PI_CODING_AGENT_DIR?.trim() || envFile.PI_CODING_AGENT_DIR?.trim();
+  if (explicit) return path.resolve(explicit);
+
+  const globalPiAgentDir = path.join(os.homedir(), ".pi", "agent");
+  if (fs.existsSync(globalPiAgentDir)) return globalPiAgentDir;
+  return path.join(process.cwd(), "data", "pi-agent");
+}
+
+function resolvePackages() {
+  const raw = process.env.EGGENT_PI_PACKAGES?.trim();
+  if (!raw) return DEFAULT_PACKAGES;
+  return raw
+    .split(/[\s,]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function getConfiguredPackageSources(settings) {
+  const packages = Array.isArray(settings?.packages) ? settings.packages : [];
+  return packages
+    .map((entry) => {
+      if (typeof entry === "string") return entry;
+      if (entry && typeof entry === "object" && typeof entry.source === "string") return entry.source;
+      return null;
+    })
+    .filter(Boolean);
+}
+
+if (truthy(process.env.EGGENT_SKIP_PI_PACKAGE_INSTALL)) {
+  console.log("Skipping pi package install (EGGENT_SKIP_PI_PACKAGE_INSTALL is set).");
+  process.exit(0);
+}
+
+const packages = resolvePackages();
+if (packages.length === 0) {
+  console.log("No Eggent-managed pi packages requested.");
+  process.exit(0);
+}
+
+const agentDir = resolveAgentDir();
+process.env.PI_CODING_AGENT_DIR = agentDir;
+fs.mkdirSync(agentDir, { recursive: true });
+
+const { DefaultPackageManager, SettingsManager } = await import("@earendil-works/pi-coding-agent");
+
+const settingsManager = SettingsManager.create(process.cwd(), agentDir);
+const packageManager = new DefaultPackageManager({
+  cwd: process.cwd(),
+  agentDir,
+  settingsManager,
+});
+packageManager.setProgressCallback?.((event) => {
+  const message = event?.message || event?.source || "";
+  if (message) console.log(`[pi-package] ${message}`);
+});
+
+const globalSettings = settingsManager.getGlobalSettings();
+const configuredSources = getConfiguredPackageSources(globalSettings);
+let changed = false;
+
+for (const source of packages) {
+  const configured = configuredSources.some((existing) =>
+    packageManager.packageSourcesMatch(existing, source, "user")
+  );
+
+  const installedPath = packageManager.getInstalledPath(source, "user");
+  const installed = installedPath && fs.existsSync(installedPath);
+
+  if (configured && installed) {
+    console.log(`Pi package already ready: ${source}`);
+    continue;
+  }
+
+  if (configured && !installed) {
+    console.log(`Installing missing pi package files: ${source}`);
+    await packageManager.install(source, { local: false });
+    changed = true;
+    continue;
+  }
+
+  console.log(`Installing pi package: ${source}`);
+  await packageManager.installAndPersist(source, { local: false });
+  configuredSources.push(source);
+  changed = true;
+}
+
+if (changed) {
+  await settingsManager.flush();
+  console.log(`Pi packages ensured in ${agentDir}`);
+} else {
+  console.log(`Pi packages already ensured in ${agentDir}`);
+}

@@ -34,4 +34,6 @@ sudo chmod 700 "${PI_CODING_AGENT_DIR:-/app/data/pi-agent}" >/dev/null 2>&1 || t
 
 fix_auth_file "/app/data/.gemini/settings.json"
 
+node /app/scripts/ensure-pi-packages.mjs
+
 exec npm run start

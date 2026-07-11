@@ -162,6 +162,10 @@ fi
 echo "==> Installing dependencies"
 npm install --no-package-lock
 
+PI_AGENT_DIR_VALUE="$(get_env_value "$ENV_FILE" "PI_CODING_AGENT_DIR")"
+echo "==> Ensuring pi extension packages"
+PI_CODING_AGENT_DIR="$PI_AGENT_DIR_VALUE" node scripts/ensure-pi-packages.mjs
+
 echo "==> Building production bundle"
 npm run build
 

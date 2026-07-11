@@ -164,7 +164,7 @@ export function ProjectContextSection({ projectId }: ProjectContextSectionProps)
             <div className="space-y-3 p-4">
               {!mcpContent && (
                 <p className="text-xs text-muted-foreground">
-                  No `servers.json` found for this project. Save to create it.
+                  No `.mcp.json` found for this project. Save to create it.
                 </p>
               )}
               {mcpStatus && (

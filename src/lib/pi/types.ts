@@ -7,9 +7,8 @@ export interface PiSessionOptions {
   memorySubdir?: string;
   enableEggentTools?: boolean;
   /**
-   * Keep Eggent sessions fast by disabling global pi packages/extensions.
-   * Core pi tools and Eggent custom tools still load. Project-local skills
-   * passed by Eggent remain available.
+   * Optional escape hatch for tests/debugging: when true, disables pi-discovered
+   * extensions/skills/prompts/themes. By default Eggent allows all global pi packages.
    */
   corePiToolsOnly?: boolean;
 }

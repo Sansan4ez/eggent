@@ -44,9 +44,9 @@ const projectFiles = [
     icon: Puzzle,
   },
   {
-    name: "mcp.json",
+    name: ".mcp.json",
     title: "MCP",
-    description: "Project-only MCP servers exposed to pi as eggent_mcp_* tools.",
+    description: "Project-only MCP servers exposed through pi-mcp-adapter's mcp tool.",
     href: "mcp",
     icon: Wrench,
   },
@@ -195,7 +195,7 @@ export default function ProjectDetailsPage() {
   -> data/projects/${project.id}/context.md
   -> data/projects/${project.id}/memory.md
   -> data/projects/${project.id}/skills/
-  -> data/projects/${project.id}/mcp.json
+  -> data/projects/${project.id}/.mcp.json
   -> data/projects/${project.id}/cron.json
   -> data/projects/${project.id}/model.json
   -> pi SDK AgentSession`}</pre>

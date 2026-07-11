@@ -139,6 +139,7 @@ function TreeNode({
         "context.md": "context",
         "memory.md": "memory",
         "mcp.json": "mcp",
+        ".mcp.json": "mcp",
         "cron.json": "cron",
         "model.json": "settings",
       };

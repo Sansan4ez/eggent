@@ -28,6 +28,9 @@ const TOOL_ICONS: Record<string, React.ElementType> = {
   memory_load: Brain,
   memory_delete: Brain,
   search_web: Search,
+  web_search: Search,
+  fetch_content: Globe,
+  get_search_content: FileText,
   web_fetch: Globe,
   knowledge_query: FileText,
   call_subordinate: Bot,
@@ -40,6 +43,7 @@ const TOOL_ICONS: Record<string, React.ElementType> = {
   write_skill_file: Puzzle,
   upsert_mcp_server: Puzzle,
   delete_mcp_server: Puzzle,
+  mcp: Puzzle,
   cron: CalendarClock,
   list_projects: FolderOpen,
   get_current_project: FolderOpen,
@@ -53,6 +57,9 @@ const TOOL_LABELS: Record<string, string> = {
   memory_load: "Memory Load",
   memory_delete: "Memory Delete",
   search_web: "Web Search",
+  web_search: "Web Search",
+  fetch_content: "Fetch Content",
+  get_search_content: "Get Search Content",
   web_fetch: "Web Fetch",
   knowledge_query: "Knowledge Query",
   call_subordinate: "Subordinate Agent",
@@ -65,6 +72,7 @@ const TOOL_LABELS: Record<string, string> = {
   write_skill_file: "Write Skill File",
   upsert_mcp_server: "Upsert MCP Server",
   delete_mcp_server: "Delete MCP Server",
+  mcp: "MCP",
   cron: "Cron",
   list_projects: "List Projects",
   get_current_project: "Current Project",
@@ -99,12 +107,12 @@ export function ToolOutput({ toolName, args, result }: ToolOutputProps) {
             {String(args.runtime)}
           </span>
         ) : null}
-        {toolName === "search_web" && args.query ? (
+        {(toolName === "search_web" || toolName === "web_search") && args.query ? (
           <span className="text-xs text-muted-foreground truncate">
             &quot;{String(args.query)}&quot;
           </span>
         ) : null}
-        {toolName === "web_fetch" && args.url ? (
+        {(toolName === "web_fetch" || toolName === "fetch_content") && args.url ? (
           <span className="text-xs text-muted-foreground truncate">
             {String(args.url)}
           </span>

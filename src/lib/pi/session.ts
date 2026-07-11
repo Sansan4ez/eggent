@@ -10,6 +10,7 @@ import {
 import { createEggentPiTools } from "@/lib/pi/eggent-tools";
 import type { PiSessionOptions } from "@/lib/pi/types";
 import {
+  ensureProjectMcpAdapterConfig,
   getProject,
   getWorkDir,
   loadProjectModelSettings,
@@ -53,7 +54,7 @@ function buildEggentProjectContext(options: {
     options.projectId
       ? "This Eggent project is the configuration for the current pi agent."
       : "This orchestrator coordinates all Eggent projects. Each first-level subdirectory in the working directory is a project.",
-    "Eggent configures the pi runtime; pi owns reasoning, tools, skills, sessions, compaction, and tool execution.",
+    "Eggent configures the pi runtime; pi owns reasoning, tools, skills, sessions, compaction, extensions, and tool execution.",
     "",
     options.projectId ? `Project id: ${options.projectId}` : "Project id: orchestrator",
     options.projectName ? `Project name: ${options.projectName}` : "",
@@ -74,8 +75,9 @@ function buildEggentProjectContext(options: {
       ? "- eggent_memory_search / eggent_memory_save / eggent_memory_delete for the project memory.md file."
       : "- Project memory tools require a selected project or explicit project_id.",
     options.projectId
-      ? "- eggent_mcp_* tools for MCP servers configured on this Eggent project."
-      : "- Project MCP tools are available after switching into a project.",
+      ? "- Use pi-mcp-adapter's mcp proxy tool for MCP servers configured in this project's .mcp.json."
+      : "- Project MCP tools are available through pi-mcp-adapter after switching into a project.",
+    "- Use pi-web-access tools (web_search, fetch_content, get_search_content) for internet access when available.",
     "- eggent_list_pipelines / eggent_start_pipeline for multi-project pipelines.",
   ]
     .filter(Boolean)
@@ -137,6 +139,9 @@ export async function createEggentPiSession(options: PiSessionOptions = {}) {
   const globalConfiguredModel = findAvailableModel(settingsManager.getDefaultProvider(), settingsManager.getDefaultModel());
   const configuredModel = projectConfiguredModel || globalConfiguredModel || availableModels[0];
   const project = projectId ? await getProject(projectId) : null;
+  if (projectId) {
+    await ensureProjectMcpAdapterConfig(projectId, cwd);
+  }
   const memorySubdir =
     options.memorySubdir ||
     (project?.memoryMode === "global" ? "main" : projectId || "main");
@@ -146,7 +151,7 @@ export async function createEggentPiSession(options: PiSessionOptions = {}) {
         path.join(skill.skillDir, "SKILL.md")
       )
     : [];
-  const corePiToolsOnly = options.corePiToolsOnly !== false;
+  const corePiToolsOnly = options.corePiToolsOnly === true;
 
   const projectContext = buildEggentProjectContext({
     projectId,

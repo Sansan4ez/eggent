@@ -45,8 +45,9 @@ A tool set is created depending on context and settings:
 | `memory_load`      | If memory is enabled       | Search memory                        |
 | `memory_delete`    | If memory is enabled       | Delete memory records                |
 | `knowledge_query`  | Always                     | Search knowledge base documents      |
-| `search_web`       | If web search is enabled   | Search the internet                  |
-| `web_fetch`        | If web tools are enabled   | Fetch a specific URL                 |
+| `web_search`       | Via `pi-web-access` package | Search the internet                  |
+| `fetch_content`    | Via `pi-web-access` package | Fetch URLs/GitHub/PDF/video content  |
+| `mcp`              | Via `pi-mcp-adapter` package | Access configured MCP servers        |
 | `load_skill`       | If `projectId` exists      | Load full skill instructions         |
 | `call_subordinate` | For agents 0-2 only        | Delegate to a subordinate agent      |
 
@@ -160,7 +161,7 @@ When **`load_skill`** is called, the tool reads the selected skill's full **SKIL
 [agent.ts] runAgent:
    1. getSettings() -> model, settings
    2. getChat(chatId) -> context.history
-   3. createAgentTools(context, settings) -> tools (response, code_execution, memory_*, knowledge_query, search_web?, web_fetch?, load_skill?, call_subordinate?)
+   3. createAgentTools(context, settings) + pi packages -> tools (response, code_execution, memory_*, knowledge_query, web_search/fetch_content via pi-web-access, mcp via pi-mcp-adapter, load_skill?, call_subordinate?)
    4. buildSystemPrompt(projectId, agentNumber, toolNames) ->
         system.md + Agent Identity + tool-*.md per tool + Active Project + project.instructions + loadProjectSkillsMetadata -> <available_skills> + date/time
    5. messages = history + { user, userMessage }

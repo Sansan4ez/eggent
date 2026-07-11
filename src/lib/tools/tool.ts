@@ -17,7 +17,6 @@ import {
 } from "@/lib/tools/code-execution";
 import { memorySave, memoryLoad, memoryDelete } from "@/lib/tools/memory-tools";
 import { knowledgeQuery } from "@/lib/tools/knowledge-query";
-import { fetchWebPage, searchWeb } from "@/lib/tools/search-engine";
 import { callSubordinate } from "@/lib/tools/call-subordinate";
 import { createCronTool } from "@/lib/tools/cron-tool";
 import { installPackages } from "@/lib/tools/install-orchestrator";
@@ -1267,40 +1266,9 @@ export function createAgentTools(
     },
   });
 
-  // Search engine tool
-  if (settings.search.enabled && settings.search.provider !== "none") {
-    tools.search_web = tool({
-      description:
-        "Search the internet for current information. Use this for broad discovery and multiple sources. For a specific URL, use web_fetch.",
-      inputSchema: z.object({
-        query: z
-          .string()
-          .describe("The search query (not a direct URL)"),
-        limit: z
-          .number()
-          .default(5)
-          .describe("Maximum number of search results"),
-      }),
-      execute: async ({ query, limit }) => {
-        return searchWeb(query, limit, settings.search);
-      },
-    });
-  }
-
-  if (settings.search.enabled) {
-    tools.web_fetch = tool({
-      description:
-        "Fetch and read content from a specific web page URL. Use this when the user gives a direct link.",
-      inputSchema: z.object({
-        url: z
-          .string()
-          .describe("Absolute http(s) URL to fetch, for example https://example.com/article"),
-      }),
-      execute: async ({ url }) => {
-        return fetchWebPage(url);
-      },
-    });
-  }
+  // Web access is provided by the pi-web-access package in the pi runtime
+  // (web_search, fetch_content, get_search_content). Eggent no longer registers
+  // native legacy web tools here.
 
   const telegramRuntime = getTelegramRuntimeData(context);
   if (telegramRuntime) {
@@ -1727,7 +1695,7 @@ export function createAgentTools(
 
     tools.upsert_mcp_server = tool({
       description:
-        "Create or update one MCP server entry in this project's .meta/mcp/servers.json. Use this when the user asks to add/edit MCP server settings.",
+        "Create or update one MCP server entry in this project's .mcp.json. Use this when the user asks to add/edit MCP server settings. In the pi backend, MCP execution goes through pi-mcp-adapter's mcp tool.",
       inputSchema: z
         .object({
           id: z
@@ -1813,7 +1781,7 @@ export function createAgentTools(
 
     tools.delete_mcp_server = tool({
       description:
-        "Delete one MCP server entry from this project's .meta/mcp/servers.json.",
+        "Delete one MCP server entry from this project's .mcp.json.",
       inputSchema: z.object({
         server_id: z.string().describe("Exact MCP server id to delete."),
       }),

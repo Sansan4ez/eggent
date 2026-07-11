@@ -34,7 +34,8 @@ async function ensureDir(dir: string) {
 export const PROJECT_CONTEXT_FILENAME = "context.md";
 export const PROJECT_MEMORY_FILENAME = "memory.md";
 export const PROJECT_SKILLS_DIRNAME = "skills";
-export const PROJECT_MCP_FILENAME = "mcp.json";
+export const PROJECT_MCP_FILENAME = ".mcp.json";
+const LEGACY_PROJECT_MCP_FILENAME = "mcp.json";
 export const PROJECT_CRON_FILENAME = "cron.json";
 export const PROJECT_MODEL_FILENAME = "model.json";
 export const PROJECT_METADATA_FILENAME = "project.json";
@@ -86,14 +87,18 @@ export function getProjectInstructionsDir(projectId: string): string {
   return getProjectSkillsDir(projectId);
 }
 
-/** Project root directory where mcp.json lives. */
+/** Project root directory where .mcp.json lives. */
 export function getProjectMcpDir(projectId: string): string {
   return projectDir(projectId);
 }
 
-/** Path to project's root mcp.json */
+/** Path to project's standard MCP config consumed by pi-mcp-adapter. */
 export function getProjectMcpServersPath(projectId: string): string {
   return path.join(projectDir(projectId), PROJECT_MCP_FILENAME);
+}
+
+function getLegacyProjectMcpServersPath(projectId: string): string {
+  return path.join(projectDir(projectId), LEGACY_PROJECT_MCP_FILENAME);
 }
 
 /**
@@ -140,12 +145,18 @@ function normalizeMcpServersFile(parsed: unknown): ProjectMcpConfig | null {
  * Load MCP servers config for a project. Returns null if file missing or invalid.
  * Supports Cursor format (mcpServers object) and legacy format (servers array).
  */
+async function readProjectMcpServersRaw(projectId: string): Promise<string | null> {
+  const primary = await readTextIfExists(getProjectMcpServersPath(projectId));
+  if (primary !== null) return primary;
+  return readTextIfExists(getLegacyProjectMcpServersPath(projectId));
+}
+
 export async function loadProjectMcpServers(
   projectId: string
 ): Promise<ProjectMcpConfig | null> {
-  const filePath = getProjectMcpServersPath(projectId);
   try {
-    const content = await fs.readFile(filePath, "utf-8");
+    const content = await readProjectMcpServersRaw(projectId);
+    if (content === null) return null;
     const parsed = JSON.parse(content) as unknown;
     return normalizeMcpServersFile(parsed);
   } catch {
@@ -198,9 +209,9 @@ function toCursorMcpServersFile(config: ProjectMcpConfig): McpServersFileCursor 
 async function loadProjectMcpServersFileCursor(
   projectId: string
 ): Promise<McpServersFileCursor> {
-  const filePath = getProjectMcpServersPath(projectId);
   try {
-    const content = await fs.readFile(filePath, "utf-8");
+    const content = await readProjectMcpServersRaw(projectId);
+    if (content === null) return { mcpServers: {} };
     const parsed = JSON.parse(content) as unknown;
     const cursor = parsed as McpServersFileCursor;
     if (cursor?.mcpServers && typeof cursor.mcpServers === "object") {
@@ -315,7 +326,7 @@ export async function saveProjectMcpServersContent(
   } catch {
     return {
       success: false,
-      error: "Invalid JSON. Provide a valid mcp.json object.",
+      error: "Invalid JSON. Provide a valid .mcp.json object.",
     };
   }
 
@@ -365,6 +376,29 @@ export async function saveProjectMcpServersContent(
     content,
     servers,
   };
+}
+
+export async function ensureProjectMcpAdapterConfig(
+  projectId: string,
+  cwd?: string
+): Promise<string> {
+  const sourcePath = getProjectMcpServersPath(projectId);
+  let content = await readProjectMcpServersRaw(projectId);
+  if (content === null) {
+    content = JSON.stringify({ mcpServers: {} }, null, 2);
+  }
+
+  await ensureDir(getProjectMcpDir(projectId));
+  await fs.writeFile(sourcePath, content, "utf-8");
+
+  const targetDir = cwd ? path.resolve(cwd) : projectDir(projectId);
+  const targetPath = path.join(targetDir, PROJECT_MCP_FILENAME);
+  if (path.resolve(targetPath) !== path.resolve(sourcePath)) {
+    await ensureDir(targetDir);
+    await fs.writeFile(targetPath, content, "utf-8");
+  }
+
+  return targetPath;
 }
 
 const SKILL_FILE = "SKILL.md";
@@ -1364,9 +1398,12 @@ async function ensureProjectDiskLayout(project: Project): Promise<Project> {
   await ensureDir(getProjectSkillsDir(project.id));
 
   const legacyMcpPath = path.join(projectMetaDir(project.id), "mcp", "servers.json");
+  const rootLegacyMcpPath = getLegacyProjectMcpServersPath(project.id);
   const mcpPath = getProjectMcpServersPath(project.id);
   if (!(await readTextIfExists(mcpPath))) {
-    const legacyMcp = await readTextIfExists(legacyMcpPath);
+    const legacyMcp =
+      (await readTextIfExists(rootLegacyMcpPath)) ??
+      (await readTextIfExists(legacyMcpPath));
     await writeTextFile(mcpPath, legacyMcp ?? JSON.stringify({ mcpServers: {} }, null, 2));
   }
 

@@ -251,8 +251,8 @@ export default function McpPage() {
                 <h2 className="text-2xl font-semibold">MCP Servers</h2>
                 <p className="text-sm text-muted-foreground">
                   View and edit MCP servers configured for each project from
-                  <span className="font-mono"> .meta/mcp/servers.json </span>
-                  and switch between projects.
+                  <span className="font-mono"> .mcp.json </span>
+                  and switch between projects. Runtime access is provided by pi-mcp-adapter's mcp tool.
                 </p>
               </div>
 
@@ -395,7 +395,7 @@ export default function McpPage() {
               {selectedProjectId ? (
                 <div className="rounded-lg border bg-card">
                   <div className="flex items-center justify-between border-b px-4 py-3">
-                    <h3 className="text-sm font-medium">Raw servers.json</h3>
+                    <h3 className="text-sm font-medium">Raw .mcp.json</h3>
                     {!loading && (
                       <span className="text-xs text-muted-foreground">
                         Edit JSON directly
@@ -405,7 +405,7 @@ export default function McpPage() {
                   <div className="space-y-3 p-4">
                     {!loading && !rawContent && (
                       <p className="text-xs text-muted-foreground">
-                        `servers.json` does not exist yet for this project. Save to create it.
+                        `.mcp.json` does not exist yet for this project. Save to create it.
                       </p>
                     )}
                     <textarea
@@ -428,7 +428,7 @@ export default function McpPage() {
                             Saving...
                           </>
                         ) : (
-                          "Save servers.json"
+                          "Save .mcp.json"
                         )}
                       </Button>
                       <Button
