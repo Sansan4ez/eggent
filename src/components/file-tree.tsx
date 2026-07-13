@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, type DragEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   ChevronRight,
@@ -47,6 +47,36 @@ function getFileIcon(name: string) {
   }
 }
 
+function hasDraggedFiles(event: DragEvent): boolean {
+  return Array.from(event.dataTransfer.types || []).includes("Files");
+}
+
+function getDroppedFiles(event: DragEvent): File[] {
+  return Array.from(event.dataTransfer.files || []).filter((file) => file.size >= 0);
+}
+
+async function uploadFilesToDirectory(projectId: string, targetPath: string, files: File[]) {
+  const formData = new FormData();
+  formData.append("project", projectId);
+  formData.append("path", targetPath);
+  for (const file of files) {
+    formData.append("files", file, file.name);
+  }
+
+  const res = await fetch("/api/files/upload", {
+    method: "POST",
+    body: formData,
+  });
+  const payload = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    throw new Error(typeof payload.error === "string" ? payload.error : "Failed to upload files");
+  }
+  return payload as {
+    uploaded?: Array<{ name: string; path: string; size: number }>;
+    errors?: Array<{ name: string; error: string }>;
+  };
+}
+
 interface TreeNodeProps {
   projectId: string;
   name: string;
@@ -72,6 +102,7 @@ function TreeNode({
   const [children, setChildren] = useState<FileEntry[] | null>(null);
   const childrenRef = useRef<FileEntry[] | null>(null);
   const [loading, setLoading] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const downloadHref = useMemo(() => {
     if (type !== "file") return "";
     const params = new URLSearchParams({
@@ -183,6 +214,46 @@ function TreeNode({
     router.push("/dashboard");
   };
 
+  const uploadDroppedFiles = async (files: File[]) => {
+    if (type !== "directory" || files.length === 0) return;
+    try {
+      const result = await uploadFilesToDirectory(projectId, relativePath, files);
+      const errors = result.errors ?? [];
+      if (errors.length > 0) {
+        window.alert(errors.map((item) => `${item.name}: ${item.error}`).join("\n"));
+      }
+      setExpanded(true);
+      await loadChildren(true, true);
+      onCreated?.();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Failed to upload files");
+    }
+  };
+
+  const handleDragOver = (event: DragEvent) => {
+    if (type !== "directory" || !hasDraggedFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "copy";
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (event: DragEvent) => {
+    if (type !== "directory") return;
+    event.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (event: DragEvent) => {
+    if (type !== "directory") return;
+    const files = getDroppedFiles(event);
+    if (files.length === 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setIsDragOver(false);
+    void uploadDroppedFiles(files);
+  };
+
   const handleClick = () => {
     if (type === "file") {
       const params = new URLSearchParams({ project: projectId, path: relativePath });
@@ -208,7 +279,15 @@ function TreeNode({
     : getFileIcon(name);
 
   return (
-    <div className="group/tree-node relative">
+    <div
+      className={cn(
+        "group/tree-node relative",
+        type === "directory" && isDragOver && "rounded-sm bg-primary/10 ring-1 ring-primary/40"
+      )}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
       <button
         onClick={handleClick}
         className={cn(
@@ -351,6 +430,7 @@ export function FileTree({ projectId }: FileTreeProps) {
   const router = useRouter();
   const { currentPath, setCurrentPath } = useAppStore();
   const [rootEntries, setRootEntries] = useState<FileEntry[] | null>(null);
+  const [isRootDragOver, setIsRootDragOver] = useState(false);
   const refreshToken = useBackgroundSync({
     topics: ["files", "projects", "global"],
     projectId: projectId === "none" ? null : projectId,
@@ -410,10 +490,54 @@ export function FileTree({ projectId }: FileTreeProps) {
     }
   };
 
+  const uploadDroppedRootFiles = async (files: File[]) => {
+    if (files.length === 0) return;
+    try {
+      const result = await uploadFilesToDirectory(projectId, "", files);
+      const errors = result.errors ?? [];
+      if (errors.length > 0) {
+        window.alert(errors.map((item) => `${item.name}: ${item.error}`).join("\n"));
+      }
+      await loadRootEntries();
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Failed to upload files");
+    }
+  };
+
+  const handleRootDragOver = (event: DragEvent) => {
+    if (!hasDraggedFiles(event)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.dataTransfer.dropEffect = "copy";
+    setIsRootDragOver(true);
+  };
+
+  const handleRootDragLeave = (event: DragEvent) => {
+    event.stopPropagation();
+    setIsRootDragOver(false);
+  };
+
+  const handleRootDrop = (event: DragEvent) => {
+    const files = getDroppedFiles(event);
+    if (files.length === 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    setIsRootDragOver(false);
+    void uploadDroppedRootFiles(files);
+  };
+
   return (
     <div className="text-xs">
       {/* Project root button */}
-      <div className="group/root relative">
+      <div
+        className={cn(
+          "group/root relative",
+          isRootDragOver && "rounded-sm bg-primary/10 ring-1 ring-primary/40"
+        )}
+        onDragOver={handleRootDragOver}
+        onDragLeave={handleRootDragLeave}
+        onDrop={handleRootDrop}
+      >
         <button
           onClick={() => setCurrentPath("")}
           className={cn(
