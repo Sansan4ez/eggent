@@ -23,6 +23,19 @@ fix_auth_file() {
   sudo chmod 600 "$file_path" >/dev/null 2>&1 || true
 }
 
+# Bind-mounted ./data is often created as root on VPS hosts. The container runs
+# as node (uid 1000), so fix ownership before creating pi-agent/cache dirs.
+DATA_ROOT="/app/data"
+sudo mkdir -p \
+  "$DATA_ROOT" \
+  "${PI_CODING_AGENT_DIR:-/app/data/pi-agent}" \
+  "${TMPDIR:-/app/data/tmp}" \
+  "${PLAYWRIGHT_BROWSERS_PATH:-/app/data/ms-playwright}" \
+  "${npm_config_cache:-/app/data/npm-cache}" \
+  "${XDG_CACHE_HOME:-/app/data/.cache}" >/dev/null 2>&1 || true
+sudo chown -R node:node "$DATA_ROOT" >/dev/null 2>&1 || true
+sudo chmod u+rwX "$DATA_ROOT" >/dev/null 2>&1 || true
+
 fix_auth_dir "/app/data/.codex"
 fix_auth_dir "/app/data/.gemini"
 
