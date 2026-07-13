@@ -53,6 +53,21 @@ sudo chmod 700 "$PI_AGENT_DIR"
 
 fix_auth_file "/app/data/.gemini/settings.json"
 
+# Middleware runs in the Edge runtime and cannot read files. Generate a stable
+# cookie-signing secret into the data volume, then expose it as env for both
+# middleware verification and Node route handlers.
+if [[ -z "${EGGENT_AUTH_SECRET:-}" ]]; then
+  AUTH_SECRET_FILE="/app/data/settings/auth-secret"
+  sudo mkdir -p "$(dirname "$AUTH_SECRET_FILE")"
+  sudo chown node:node "$(dirname "$AUTH_SECRET_FILE")"
+  if [[ ! -s "$AUTH_SECRET_FILE" ]]; then
+    node -e "process.stdout.write(require('crypto').randomBytes(32).toString('hex'))" > "$AUTH_SECRET_FILE"
+  fi
+  sudo chown node:node "$AUTH_SECRET_FILE"
+  sudo chmod 600 "$AUTH_SECRET_FILE"
+  export EGGENT_AUTH_SECRET="$(cat "$AUTH_SECRET_FILE")"
+fi
+
 node /app/scripts/ensure-pi-packages.mjs
 
 exec npm run start
