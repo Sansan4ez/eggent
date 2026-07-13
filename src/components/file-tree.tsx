@@ -11,6 +11,8 @@ import {
   FileCode,
   File,
   Download,
+  FilePlus,
+  FolderPlus,
 } from "lucide-react";
 import { useAppStore } from "@/store/app-store";
 import { cn } from "@/lib/utils";
@@ -51,6 +53,7 @@ interface TreeNodeProps {
   type: "file" | "directory";
   depth: number;
   refreshToken: number;
+  onCreated?: () => void;
 }
 
 function TreeNode({
@@ -60,9 +63,10 @@ function TreeNode({
   type,
   depth,
   refreshToken,
+  onCreated,
 }: TreeNodeProps) {
   const router = useRouter();
-  const { currentPath, setCurrentPath } = useAppStore();
+  const { currentPath } = useAppStore();
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<FileEntry[] | null>(null);
   const childrenRef = useRef<FileEntry[] | null>(null);
@@ -133,31 +137,37 @@ function TreeNode({
     void loadChildren(true, false);
   }, [refreshToken, type, expanded, loadChildren]);
 
+  const createEntry = async (entryType: "file" | "directory") => {
+    const label = entryType === "file" ? "file" : "folder";
+    const name = window.prompt(`New ${label} name`);
+    const trimmed = name?.trim();
+    if (!trimmed) return;
+
+    const nextPath = relativePath ? `${relativePath}/${trimmed}` : trimmed;
+    const res = await fetch("/api/files", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project: projectId, path: nextPath, type: entryType }),
+    });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      window.alert(typeof payload.error === "string" ? payload.error : `Failed to create ${label}`);
+      return;
+    }
+
+    setExpanded(true);
+    await loadChildren(true, true);
+    onCreated?.();
+    if (entryType === "file") {
+      const params = new URLSearchParams({ project: projectId, path: nextPath });
+      router.push(`/dashboard/files?${params.toString()}`);
+    }
+  };
+
   const handleClick = () => {
     if (type === "file") {
-      if (projectId !== "none") {
-        const projectFileRoutes: Record<string, string> = {
-          "context.md": "context",
-          "memory.md": "memory",
-          "mcp.json": "mcp",
-          ".mcp.json": "mcp",
-          "model.json": "settings",
-        };
-        const route = projectFileRoutes[relativePath];
-        if (route) {
-          router.push(`/dashboard/projects/${projectId}/${route}`);
-          return;
-        }
-      }
-
-      if (downloadHref) {
-        const link = document.createElement("a");
-        link.href = downloadHref;
-        link.download = name;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-      }
+      const params = new URLSearchParams({ project: projectId, path: relativePath });
+      router.push(`/dashboard/files?${params.toString()}`);
       return;
     }
 
@@ -185,6 +195,7 @@ function TreeNode({
         className={cn(
           "flex items-center gap-1 w-full text-left text-xs py-1 px-1 rounded-sm hover:bg-accent/50 transition-colors",
           type === "file" && "pr-7",
+          type === "directory" && "pr-12",
           isActive && "bg-accent text-accent-foreground font-medium"
         )}
         style={{ paddingLeft: `${depth * 12 + 4}px` }}
@@ -212,12 +223,41 @@ function TreeNode({
         <a
           href={downloadHref}
           download={name}
+          onClick={(event) => event.stopPropagation()}
           className="absolute right-1 top-1/2 inline-flex size-5 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition hover:bg-accent hover:text-foreground group-hover/tree-node:opacity-100"
           title={`Download ${name}`}
           aria-label={`Download ${name}`}
         >
           <Download className="size-3.5" />
         </a>
+      )}
+      {type === "directory" && (
+        <div className="absolute right-1 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded-sm bg-background/80 group-hover/tree-node:flex">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              void createEntry("file");
+            }}
+            className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+            title={`New file in ${name}`}
+            aria-label={`New file in ${name}`}
+          >
+            <FilePlus className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              void createEntry("directory");
+            }}
+            className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+            title={`New folder in ${name}`}
+            aria-label={`New folder in ${name}`}
+          >
+            <FolderPlus className="size-3.5" />
+          </button>
+        </div>
       )}
 
       {type === "directory" && expanded && (
@@ -241,6 +281,7 @@ function TreeNode({
               type={child.type}
               depth={depth + 1}
               refreshToken={refreshToken}
+              onCreated={onCreated}
             />
           ))}
           {children?.length === 0 && !loading && (
@@ -262,6 +303,7 @@ interface FileTreeProps {
 }
 
 export function FileTree({ projectId }: FileTreeProps) {
+  const router = useRouter();
   const { currentPath, setCurrentPath } = useAppStore();
   const [rootEntries, setRootEntries] = useState<FileEntry[] | null>(null);
   const refreshToken = useBackgroundSync({
@@ -271,6 +313,13 @@ export function FileTree({ projectId }: FileTreeProps) {
 
   useEffect(() => {
     setRootEntries(null);
+  }, [projectId]);
+
+  const loadRootEntries = useCallback(async () => {
+    const params = new URLSearchParams({ project: projectId, path: "" });
+    const res = await fetch(`/api/files?${params}`);
+    const data = await res.json();
+    if (Array.isArray(data)) setRootEntries(data);
   }, [projectId]);
 
   useEffect(() => {
@@ -292,19 +341,71 @@ export function FileTree({ projectId }: FileTreeProps) {
     };
   }, [projectId, refreshToken]);
 
+  const createRootEntry = async (entryType: "file" | "directory") => {
+    const label = entryType === "file" ? "file" : "folder";
+    const name = window.prompt(`New ${label} name`);
+    const trimmed = name?.trim();
+    if (!trimmed) return;
+
+    const res = await fetch("/api/files", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ project: projectId, path: trimmed, type: entryType }),
+    });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      window.alert(typeof payload.error === "string" ? payload.error : `Failed to create ${label}`);
+      return;
+    }
+
+    await loadRootEntries();
+    if (entryType === "file") {
+      const params = new URLSearchParams({ project: projectId, path: trimmed });
+      router.push(`/dashboard/files?${params.toString()}`);
+    }
+  };
+
   return (
     <div className="text-xs">
       {/* Project root button */}
-      <button
-        onClick={() => setCurrentPath("")}
-        className={cn(
-          "flex items-center gap-1 w-full text-left text-xs py-1 px-1 rounded-sm hover:bg-accent/50 transition-colors",
-          currentPath === "" && "bg-accent text-accent-foreground font-medium"
-        )}
-      >
-        <FolderOpen className="size-3.5 shrink-0 text-blue-500" />
-        <span className="truncate font-medium">/</span>
-      </button>
+      <div className="group/root relative">
+        <button
+          onClick={() => setCurrentPath("")}
+          className={cn(
+            "flex items-center gap-1 w-full text-left text-xs py-1 px-1 pr-12 rounded-sm hover:bg-accent/50 transition-colors",
+            currentPath === "" && "bg-accent text-accent-foreground font-medium"
+          )}
+        >
+          <FolderOpen className="size-3.5 shrink-0 text-blue-500" />
+          <span className="truncate font-medium">/</span>
+        </button>
+        <div className="absolute right-1 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded-sm bg-background/80 group-hover/root:flex">
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              void createRootEntry("file");
+            }}
+            className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+            title="New file"
+            aria-label="New file"
+          >
+            <FilePlus className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              void createRootEntry("directory");
+            }}
+            className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent hover:text-foreground"
+            title="New folder"
+            aria-label="New folder"
+          >
+            <FolderPlus className="size-3.5" />
+          </button>
+        </div>
+      </div>
 
       {rootEntries === null ? (
         <span className="text-[10px] text-muted-foreground block pl-4 py-1">
@@ -324,6 +425,7 @@ export function FileTree({ projectId }: FileTreeProps) {
             type={entry.type}
             depth={1}
             refreshToken={refreshToken}
+            onCreated={loadRootEntries}
           />
         ))
       )}
