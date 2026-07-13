@@ -10,7 +10,7 @@ import {
 import { createEggentPiTools } from "@/lib/pi/eggent-tools";
 import type { PiSessionOptions } from "@/lib/pi/types";
 import { getChatFiles } from "@/lib/storage/chat-files-store";
-import type { ChatFile } from "@/lib/types";
+import type { ChatFile, ProjectSkillMetadata } from "@/lib/types";
 import {
   ensureProjectMcpAdapterConfig,
   getProject,
@@ -55,6 +55,28 @@ function formatChatFilesContext(chatFiles: ChatFile[]): string[] {
   ];
 }
 
+function formatProjectSkillsContext(options: { projectId?: string; cwd: string; skills: ProjectSkillMetadata[] }): string[] {
+  if (!options.projectId || options.skills.length === 0) return [];
+  const rows = options.skills
+    .map((skill) => {
+      const skillFile = path.join(skill.skillDir, "SKILL.md");
+      const relative = path.relative(options.cwd, skillFile).replace(/\\/g, "/");
+      const cwdRelative = relative && !relative.startsWith("..") && !path.isAbsolute(relative)
+        ? `./${relative}`
+        : skillFile;
+      return `| ${skill.name} | ${cwdRelative} | ${skillFile} | ${skill.description} |`;
+    })
+    .join("\n");
+  return [
+    "",
+    "Project-local Pi skills:",
+    "These Eggent project skills are passed to Pi as project-scoped skills for this session. When the user asks to use one, read its SKILL.md from the exact path below before acting. The session cwd is already the project root, so do not prefix paths with data/projects/<projectId>; use the cwd-relative path (for example ./skills/name/SKILL.md) or the absolute path exactly as shown.",
+    "| Skill | CWD-relative SKILL.md | Absolute SKILL.md | Description |",
+    "| --- | --- | --- | --- |",
+    rows,
+  ];
+}
+
 function buildEggentProjectContext(options: {
   projectId?: string;
   projectName?: string;
@@ -63,6 +85,7 @@ function buildEggentProjectContext(options: {
   memorySubdir: string;
   cwd: string;
   chatFiles?: ChatFile[];
+  projectSkills?: ProjectSkillMetadata[];
   runtimeModel?: {
     provider?: string;
     id?: string;
@@ -92,6 +115,7 @@ function buildEggentProjectContext(options: {
     "",
     "Project instructions:",
     options.projectInstructions?.trim() || "No project-specific instructions configured.",
+    ...formatProjectSkillsContext({ projectId: options.projectId, cwd: options.cwd, skills: options.projectSkills ?? [] }),
     ...formatChatFilesContext(options.chatFiles ?? []),
     "",
     "Available Eggent bridge tools:",
@@ -104,6 +128,9 @@ function buildEggentProjectContext(options: {
       : "- Project MCP tools are available through pi-mcp-adapter after switching into a project.",
     "- Use pi-web-access tools (web_search, fetch_content, get_search_content) for internet access when available.",
     "- eggent_manage_schedules for listing or clearing pi-subagents scheduled tasks. Do not use Agent.schedule to manage existing schedules.",
+    options.projectSkills?.length
+      ? "- Project-local skills are listed above and are available as Pi skills in this project scope. Prefer those exact skill paths when activating a project skill."
+      : "- No project-local skills are installed for this project.",
     options.chatFiles?.length
       ? "- Uploaded chat files are listed above. Read them by absolute path when the user asks about attached/uploaded files."
       : "- No uploaded chat files are currently attached to this chat.",
@@ -176,11 +203,8 @@ export async function createEggentPiSession(options: PiSessionOptions = {}) {
     options.memorySubdir ||
     (project?.memoryMode === "global" ? "main" : projectId || "main");
 
-  const projectSkillPaths = projectId
-    ? (await loadProjectSkillsMetadata(projectId)).map((skill) =>
-        path.join(skill.skillDir, "SKILL.md")
-      )
-    : [];
+  const projectSkills = projectId ? await loadProjectSkillsMetadata(projectId) : [];
+  const projectSkillPaths = projectSkills.map((skill) => path.join(skill.skillDir, "SKILL.md"));
   const chatFiles = options.chatId ? await getChatFiles(options.chatId) : [];
   const corePiToolsOnly = options.corePiToolsOnly === true;
 
@@ -192,6 +216,7 @@ export async function createEggentPiSession(options: PiSessionOptions = {}) {
     memorySubdir,
     cwd,
     chatFiles,
+    projectSkills,
     runtimeModel: configuredModel
       ? {
           provider: configuredModel.provider,
