@@ -171,7 +171,6 @@ function TreeNode({
       if (willExpand) {
         void loadChildren(true, true);
       }
-      setCurrentPath(relativePath);
     }
   };
 
