@@ -281,23 +281,23 @@ function TreeNode({
   return (
     <div
       className={cn(
-        "group/tree-node relative",
         type === "directory" && isDragOver && "rounded-sm bg-primary/10 ring-1 ring-primary/40"
       )}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
-      <button
-        onClick={handleClick}
-        className={cn(
-          "flex items-center gap-1 w-full text-left text-xs py-1 px-1 rounded-sm hover:bg-accent/50 transition-colors",
-          type === "file" && "pr-12",
-          type === "directory" && "pr-16",
-          isActive && "bg-accent text-accent-foreground font-medium"
-        )}
-        style={{ paddingLeft: `${depth * 12 + 4}px` }}
-      >
+      <div className="group/tree-node relative">
+        <button
+          onClick={handleClick}
+          className={cn(
+            "flex items-center gap-1 w-full text-left text-xs py-1 px-1 rounded-sm hover:bg-accent/50 transition-colors",
+            type === "file" && "pr-12",
+            type === "directory" && "pr-16",
+            isActive && "bg-accent text-accent-foreground font-medium"
+          )}
+          style={{ paddingLeft: `${depth * 12 + 4}px` }}
+        >
         {type === "directory" ? (
           expanded ? (
             <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
@@ -316,8 +316,8 @@ function TreeNode({
           )}
         />
         <span className="truncate">{name}</span>
-      </button>
-      {type === "file" && (
+        </button>
+        {type === "file" && (
         <div className="absolute right-1 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded-sm bg-background/80 group-hover/tree-node:flex">
           <a
             href={downloadHref}
@@ -342,8 +342,8 @@ function TreeNode({
             <Trash2 className="size-3.5" />
           </button>
         </div>
-      )}
-      {type === "directory" && (
+        )}
+        {type === "directory" && (
         <div className="absolute right-1 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded-sm bg-background/80 group-hover/tree-node:flex">
           <button
             type="button"
@@ -382,7 +382,8 @@ function TreeNode({
             <Trash2 className="size-3.5" />
           </button>
         </div>
-      )}
+        )}
+      </div>
 
       {type === "directory" && expanded && (
         <div>
