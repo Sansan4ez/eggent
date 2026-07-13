@@ -13,6 +13,7 @@ import {
   Download,
   FilePlus,
   FolderPlus,
+  Trash2,
 } from "lucide-react";
 import { useAppStore } from "@/store/app-store";
 import { cn } from "@/lib/utils";
@@ -164,6 +165,24 @@ function TreeNode({
     }
   };
 
+  const deleteEntry = async () => {
+    const label = type === "directory" ? "folder" : "file";
+    if (!window.confirm(`Delete ${label} "${relativePath}"?${type === "directory" ? " This will delete all files inside." : ""}`)) {
+      return;
+    }
+
+    const params = new URLSearchParams({ project: projectId, path: relativePath });
+    const res = await fetch(`/api/files?${params.toString()}`, { method: "DELETE" });
+    if (!res.ok) {
+      const payload = await res.json().catch(() => ({}));
+      window.alert(typeof payload.error === "string" ? payload.error : `Failed to delete ${label}`);
+      return;
+    }
+
+    onCreated?.();
+    router.push("/dashboard");
+  };
+
   const handleClick = () => {
     if (type === "file") {
       const params = new URLSearchParams({ project: projectId, path: relativePath });
@@ -194,8 +213,8 @@ function TreeNode({
         onClick={handleClick}
         className={cn(
           "flex items-center gap-1 w-full text-left text-xs py-1 px-1 rounded-sm hover:bg-accent/50 transition-colors",
-          type === "file" && "pr-7",
-          type === "directory" && "pr-12",
+          type === "file" && "pr-12",
+          type === "directory" && "pr-16",
           isActive && "bg-accent text-accent-foreground font-medium"
         )}
         style={{ paddingLeft: `${depth * 12 + 4}px` }}
@@ -220,16 +239,30 @@ function TreeNode({
         <span className="truncate">{name}</span>
       </button>
       {type === "file" && (
-        <a
-          href={downloadHref}
-          download={name}
-          onClick={(event) => event.stopPropagation()}
-          className="absolute right-1 top-1/2 inline-flex size-5 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition hover:bg-accent hover:text-foreground group-hover/tree-node:opacity-100"
-          title={`Download ${name}`}
-          aria-label={`Download ${name}`}
-        >
-          <Download className="size-3.5" />
-        </a>
+        <div className="absolute right-1 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded-sm bg-background/80 group-hover/tree-node:flex">
+          <a
+            href={downloadHref}
+            download={name}
+            onClick={(event) => event.stopPropagation()}
+            className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground transition hover:bg-accent hover:text-foreground"
+            title={`Download ${name}`}
+            aria-label={`Download ${name}`}
+          >
+            <Download className="size-3.5" />
+          </a>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              void deleteEntry();
+            }}
+            className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+            title={`Delete ${name}`}
+            aria-label={`Delete ${name}`}
+          >
+            <Trash2 className="size-3.5" />
+          </button>
+        </div>
       )}
       {type === "directory" && (
         <div className="absolute right-1 top-1/2 hidden -translate-y-1/2 items-center gap-0.5 rounded-sm bg-background/80 group-hover/tree-node:flex">
@@ -256,6 +289,18 @@ function TreeNode({
             aria-label={`New folder in ${name}`}
           >
             <FolderPlus className="size-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={(event) => {
+              event.stopPropagation();
+              void deleteEntry();
+            }}
+            className="inline-flex size-5 items-center justify-center rounded-sm text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+            title={`Delete ${name}`}
+            aria-label={`Delete ${name}`}
+          >
+            <Trash2 className="size-3.5" />
           </button>
         </div>
       )}
