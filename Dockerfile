@@ -2,7 +2,7 @@ FROM node:22-bookworm-slim AS deps
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 
-COPY package.json package-lock.json ./
+COPY package*.json ./
 RUN npm install --no-package-lock
 
 FROM deps AS builder
@@ -61,7 +61,7 @@ RUN apt-get update \
 RUN echo "node ALL=(root) NOPASSWD: ALL" > /etc/sudoers.d/eggent-node \
   && chmod 440 /etc/sudoers.d/eggent-node
 
-COPY package.json package-lock.json ./
+COPY package*.json ./
 RUN npm install --omit=dev --no-package-lock
 
 COPY --from=builder /app/.next ./.next
