@@ -1,8 +1,9 @@
 import { Type } from "typebox";
 import { defineTool, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { McpServerConfig } from "@/lib/types";
-import { getPipelineDefinitions } from "@/lib/pipelines/store";
+import { getPipelineDefinitions, upsertPipelineDefinition } from "@/lib/pipelines/store";
 import { startPipelineRunInBackground } from "@/lib/pipelines/runner";
+import { managePiSchedules } from "@/lib/pi/schedule-host";
 import {
   createProject,
   createSkill,
@@ -33,7 +34,7 @@ export async function createEggentPiTools(options: {
     defineTool({
       name: "list_projects",
       label: "List Eggent Projects",
-      description: "List Eggent projects. Each project is a directory-backed pi agent configuration with context.md, memory.md, skills/, .mcp.json, cron.json, and model.json.",
+      description: "List Eggent projects. Each project is a directory-backed pi agent configuration with context.md, memory.md, skills/, .mcp.json, and model.json. Scheduled tasks are managed by pi-subagents.",
       parameters: Type.Object({}),
       execute: async () => {
         const projects = await getAllProjects();
@@ -166,6 +167,23 @@ export async function createEggentPiTools(options: {
       },
     }),
     defineTool({
+      name: "eggent_manage_schedules",
+      label: "Manage Pi Scheduled Tasks",
+      description: "List or clear pi-subagents scheduled tasks. Use this when the user asks to show, delete, cancel, clear, remove, or убери/удали/отмени запланированные задачи. Do not use Agent.schedule for schedule-management requests.",
+      parameters: Type.Object({
+        action: Type.Union([Type.Literal("list"), Type.Literal("clear")], { description: "Use list to show scheduled tasks, clear to remove/cancel scheduled tasks." }),
+        scope: Type.Optional(Type.Union([Type.Literal("current"), Type.Literal("all")], { description: "current = current project/session cwd; all = orchestrator and all projects. Defaults to current." })),
+      }),
+      execute: async (_toolCallId, params) => {
+        const result = await managePiSchedules({
+          action: params.action,
+          scope: params.scope || "current",
+          cwd: options.cwd,
+        });
+        return textResult(JSON.stringify(result, null, 2), result);
+      },
+    }),
+    defineTool({
       name: "eggent_memory_save",
       label: "Save Eggent Memory",
       description: "Save persistent memory for the current Eggent/pi project agent.",
@@ -238,9 +256,9 @@ export async function createEggentPiTools(options: {
       name: "eggent_start_pipeline",
       label: "Start Eggent Pipeline",
       description:
-        "Start a configured Eggent pipeline in the background. Each pipeline step runs an Eggent project as a pi agent config.",
+        "Start an existing configured Eggent pipeline by pipeline id/name. Do not pass project ids here. For ad-hoc user requests like 'first run project A, then project B', use eggent_start_project_sequence instead.",
       parameters: Type.Object({
-        pipelineId: Type.String({ description: "Pipeline id or name to start." }),
+        pipelineId: Type.String({ description: "Existing pipeline id or name to start. This is not a project id." }),
         input: Type.String({ description: "User task/input to pass to the pipeline." }),
       }),
       execute: async (_toolCallId, params) => {
@@ -269,6 +287,65 @@ export async function createEggentPiTools(options: {
             2
           ),
           { run }
+        );
+      },
+    }),
+    defineTool({
+      name: "eggent_start_project_sequence",
+      label: "Start Ad-hoc Project Sequence",
+      description:
+        "Create and start a one-off Eggent pipeline from an ordered list of project steps. Use this when the user says to run a pipeline/sequence across project ids, e.g. 'first in project 222 do X, then in project 123 do Y'.",
+      parameters: Type.Object({
+        name: Type.Optional(Type.String({ description: "Optional name for this one-off pipeline run." })),
+        input: Type.String({ description: "Overall user request/input for the sequence." }),
+        steps: Type.Array(
+          Type.Object({
+            project_id: Type.String({ description: "Eggent project id for this step." }),
+            name: Type.Optional(Type.String({ description: "Human-readable step name." })),
+            instructions: Type.String({ description: "What this project should do in this step." }),
+          }),
+          { minItems: 1, description: "Ordered project-agent steps." }
+        ),
+      }),
+      execute: async (_toolCallId, params) => {
+        const id = `adhoc-${crypto.randomUUID()}`;
+        const pipeline = await upsertPipelineDefinition({
+          id,
+          name: params.name || "Ad-hoc project sequence",
+          description: "One-off pipeline created from a chat request.",
+          steps: params.steps.map((step, index) => ({
+            id: `step-${index + 1}`,
+            name: step.name || `Step ${index + 1}: ${step.project_id}`,
+            projectId: step.project_id,
+            instructions: step.instructions,
+          })),
+        });
+        const run = await startPipelineRunInBackground({
+          pipelineId: pipeline.id,
+          input: params.input,
+          chatId: options.chatId,
+          projectId: options.projectId,
+          cwd: options.cwd,
+        });
+        return textResult(
+          JSON.stringify(
+            {
+              runId: run.id,
+              status: run.status,
+              pipelineId: run.pipelineId,
+              pipelineName: pipeline.name,
+              artifactsDir: run.artifactsDir,
+              steps: run.steps.map((step) => ({
+                id: step.stepId,
+                name: step.name,
+                projectId: step.projectId,
+                status: step.status,
+              })),
+            },
+            null,
+            2
+          ),
+          { run, pipeline }
         );
       },
     }),

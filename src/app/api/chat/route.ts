@@ -2,7 +2,6 @@ import { createUIMessageStreamResponse } from "ai";
 import { NextRequest } from "next/server";
 import { createPiChatUIMessageStream } from "@/lib/pi/chat-runner";
 import { createChat, getChat } from "@/lib/storage/chat-store";
-import { ensureCronSchedulerStarted } from "@/lib/cron/runtime";
 
 export const maxDuration = 300; // 5 min max for long agent runs
 
@@ -18,7 +17,6 @@ function formatChatStreamError(error: unknown): string {
 
 export async function POST(req: NextRequest) {
   try {
-    await ensureCronSchedulerStarted();
     const body = await req.json();
     const { chatId, currentPath } = body;
     const projectId = typeof body.projectId === "string" && body.projectId.trim() && body.projectId !== "none"

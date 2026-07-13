@@ -36,7 +36,6 @@ export const PROJECT_MEMORY_FILENAME = "memory.md";
 export const PROJECT_SKILLS_DIRNAME = "skills";
 export const PROJECT_MCP_FILENAME = ".mcp.json";
 const LEGACY_PROJECT_MCP_FILENAME = "mcp.json";
-export const PROJECT_CRON_FILENAME = "cron.json";
 export const PROJECT_MODEL_FILENAME = "model.json";
 export const PROJECT_METADATA_FILENAME = "project.json";
 
@@ -1388,10 +1387,6 @@ function defaultProjectModelFile(): string {
   return JSON.stringify({ inheritsGlobal: true }, null, 2);
 }
 
-function defaultProjectCronFile(): string {
-  return JSON.stringify({ version: 1, jobs: [] }, null, 2);
-}
-
 async function ensureProjectDiskLayout(project: Project): Promise<Project> {
   const root = projectDir(project.id);
   await ensureDir(root);
@@ -1416,11 +1411,6 @@ async function ensureProjectDiskLayout(project: Project): Promise<Project> {
   const memoryPath = getProjectMemoryPath(project.id);
   if ((await readTextIfExists(memoryPath)) === null) {
     await writeTextFile(memoryPath, defaultProjectMemory(project.name));
-  }
-
-  if ((await readTextIfExists(path.join(projectDir(project.id), PROJECT_CRON_FILENAME))) === null) {
-    const legacyCron = await readTextIfExists(path.join(projectMetaDir(project.id), "cron", "jobs.json"));
-    await writeTextFile(path.join(projectDir(project.id), PROJECT_CRON_FILENAME), legacyCron ?? defaultProjectCronFile());
   }
 
   if ((await readTextIfExists(getProjectModelSettingsPath(project.id))) === null) {
@@ -1588,7 +1578,6 @@ export async function createProject(
   await writeTextFile(getProjectContextPath(project.id), project.instructions || `# ${project.name}\n\n`);
   await writeTextFile(getProjectMemoryPath(project.id), defaultProjectMemory(project.name));
   await writeTextFile(getProjectMcpServersPath(project.id), JSON.stringify({ mcpServers: {} }, null, 2));
-  await writeTextFile(path.join(projectRoot, PROJECT_CRON_FILENAME), defaultProjectCronFile());
   await writeTextFile(getProjectModelSettingsPath(project.id), defaultProjectModelFile());
   await writeTextFile(projectMetaFile(project.id), JSON.stringify(fullProject, null, 2));
 
@@ -1663,7 +1652,7 @@ export async function getProjectFiles(
   try {
     const entries = await fs.readdir(targetDir, { withFileTypes: true });
     const files = [];
-    const HIDDEN_NAMES = new Set([".meta", ".cron-runs", ".venv", "venv", PROJECT_METADATA_FILENAME]);
+    const HIDDEN_NAMES = new Set([".meta", ".venv", "venv", "cron.json", PROJECT_METADATA_FILENAME]);
 
     for (const entry of entries) {
       if (HIDDEN_NAMES.has(entry.name)) continue; // hide internal metadata and virtualenvs

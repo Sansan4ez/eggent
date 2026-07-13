@@ -610,7 +610,7 @@ function ProjectsPageClient() {
                           </p>
                         )}
                         <div className="flex items-center gap-4 text-xs text-muted-foreground mt-2">
-                          <span className="font-mono">context.md · memory.md · skills/ · .mcp.json · cron.json · model.json</span>
+                          <span className="font-mono">context.md · memory.md · skills/ · .mcp.json · model.json</span>
                           <span>
                             Created:{" "}
                             {new Date(project.createdAt).toLocaleDateString()}

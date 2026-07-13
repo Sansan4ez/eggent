@@ -1128,7 +1128,7 @@ export async function runAgent(options: {
 }
 
 /**
- * Non-streaming agent turn for background tasks (cron/scheduler).
+ * Non-streaming agent turn for background tasks.
  */
 export async function runAgentText(options: {
   chatId: string;

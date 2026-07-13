@@ -35,7 +35,6 @@ export async function getEggentPiProjectConfig(projectId?: string | null) {
         memory: path.join(cwd, "memory.md"),
         skills: path.join(cwd, "skills"),
         mcp: path.join(cwd, ".mcp.json"),
-        cron: path.join(cwd, "cron.json"),
         model: path.join(cwd, "model.json"),
       },
       bridgeTools: [

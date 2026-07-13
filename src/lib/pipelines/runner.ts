@@ -12,6 +12,7 @@ import type {
   StartPipelineRunOptions,
 } from "@/lib/pipelines/types";
 import { createEggentPiSession } from "@/lib/pi/session";
+import { getChat, saveChat } from "@/lib/storage/chat-store";
 
 const RUNNER_STATE_KEY = "__EGGENT_PIPELINE_RUNNER_STATE__";
 
@@ -53,6 +54,45 @@ function createInitialRun(options: StartPipelineRunOptions, stepRuns: PipelineSt
     createdAt: timestamp,
     updatedAt: timestamp,
   };
+}
+
+function buildPipelineCompletionMessage(run: PipelineRun): string {
+  const status = run.status === "completed" ? "completed" : "failed";
+  const lines = [
+    `Pipeline ${status}: ${run.pipelineId}`,
+    `Run ID: ${run.id}`,
+    `Artifacts: ${run.artifactsDir}`,
+    "",
+    "Steps:",
+    ...run.steps.map((step, index) => {
+      const artifacts = step.artifacts?.length ? `; artifacts: ${step.artifacts.join(", ")}` : "";
+      const error = step.error ? `; error: ${step.error}` : "";
+      return `${index + 1}. ${step.name} (${step.projectId || "no project"}) — ${step.status}${artifacts}${error}`;
+    }),
+  ];
+  if (run.error) lines.push("", `Error: ${run.error}`);
+  return lines.join("\n");
+}
+
+async function notifyPipelineRunCompleted(run: PipelineRun): Promise<void> {
+  if (!run.chatId) return;
+  const chat = await getChat(run.chatId);
+  if (!chat) return;
+
+  const marker = `Run ID: ${run.id}`;
+  if (chat.messages.some((message) => message.role === "assistant" && message.content.includes(marker))) {
+    return;
+  }
+
+  const timestamp = now();
+  chat.messages.push({
+    id: crypto.randomUUID(),
+    role: "assistant",
+    content: buildPipelineCompletionMessage(run),
+    createdAt: timestamp,
+  });
+  chat.updatedAt = timestamp;
+  await saveChat(chat);
 }
 
 export async function createPipelineRun(options: StartPipelineRunOptions): Promise<PipelineRun> {
@@ -184,8 +224,12 @@ export async function startPipelineRunInBackground(
   options: StartPipelineRunOptions
 ): Promise<PipelineRun> {
   const run = await createPipelineRun(options);
-  void executePipelineRun(run.id, { cwd: options.cwd }).catch((error) => {
-    console.error(`Pipeline run ${run.id} failed:`, error);
-  });
+  void executePipelineRun(run.id, { cwd: options.cwd })
+    .then((completedRun) => notifyPipelineRunCompleted(completedRun))
+    .catch(async (error) => {
+      console.error(`Pipeline run ${run.id} failed:`, error);
+      const failedRun = await getPipelineRun(run.id);
+      if (failedRun) await notifyPipelineRunCompleted(failedRun);
+    });
   return run;
 }

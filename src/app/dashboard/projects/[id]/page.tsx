@@ -10,7 +10,6 @@ import { Button } from "@/components/ui/button";
 import {
   ArrowLeft,
   Bot,
-  CalendarClock,
   FileJson,
   FileText,
   Loader2,
@@ -49,13 +48,6 @@ const projectFiles = [
     description: "Project-only MCP servers exposed through pi-mcp-adapter's mcp tool.",
     href: "mcp",
     icon: Wrench,
-  },
-  {
-    name: "cron.json",
-    title: "Cron",
-    description: "Scheduled project/pi-agent turns for this project.",
-    href: "cron",
-    icon: CalendarClock,
   },
   {
     name: "model.json",
@@ -138,7 +130,7 @@ export default function ProjectDetailsPage() {
                   </div>
                   <p className="text-muted-foreground">{project.description || "No description provided."}</p>
                   <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
-                    This project is a directory. Its context, memory, skills, MCP, cron, and model settings are stored as files in the project folder and injected into pi when the agent runs.
+                    This project is a directory. Its context, memory, skills, MCP, and model settings are stored as files in the project folder and injected into pi when the agent runs. Scheduled tasks are managed by pi-subagents.
                   </p>
                 </div>
                 <Button asChild className="gap-2">
@@ -196,7 +188,6 @@ export default function ProjectDetailsPage() {
   -> data/projects/${project.id}/memory.md
   -> data/projects/${project.id}/skills/
   -> data/projects/${project.id}/.mcp.json
-  -> data/projects/${project.id}/cron.json
   -> data/projects/${project.id}/model.json
   -> pi SDK AgentSession`}</pre>
               </section>

@@ -33,8 +33,7 @@ data/projects/<projectId>/
   context.md    # pi agent instructions/context
   memory.md     # plain Markdown persistent memory
   skills/       # project-local Agent Skills
-  mcp.json      # project-local MCP servers
-  cron.json     # scheduled project-agent turns
+  .mcp.json     # project-local MCP servers
   model.json    # project model override or global inheritance
 ```
 
@@ -48,9 +47,9 @@ Eggent is responsible for:
 
 - a convenient chat UI for pi agents;
 - directory-backed project/agent configuration;
-- project-local context files, memory files, skills, MCP servers, cron, and model settings;
+- project-local context files, memory files, skills, MCP servers, and model settings;
 - persistent chat and pi session storage;
-- external/Telegram/cron entrypoints;
+- external/Telegram entrypoints;
 - multi-agent pipelines with artifact handoff;
 - project and pipeline management APIs.
 
@@ -114,9 +113,9 @@ A project can define:
 | Project instructions | Injected as a virtual pi context file |
 | Project files | Used as pi `cwd` |
 | Project skills | Passed as pi `additionalSkillPaths` |
-| Project MCP servers | Exposed as `eggent_mcp_*` tools |
+| Project MCP servers | Exposed through pi-mcp-adapter's `mcp` tool |
 | Project memory file | Exposed as `eggent_memory_*` tools over `memory.md` |
-| | Project model settings | Resolved through pi `ModelRegistry` where possible |
+| Project model settings | Resolved through pi `ModelRegistry` where possible |
 
 Project data lives under:
 
@@ -125,8 +124,7 @@ data/projects/<projectId>/
   context.md
   memory.md
   skills/
-  mcp.json
-  cron.json
+  .mcp.json
   model.json
 ```
 
@@ -162,7 +160,7 @@ Project instructions:
 
 Available Eggent bridge tools:
 - eggent_memory_search / eggent_memory_save / eggent_memory_delete
-- eggent_mcp_*
+- mcp (from pi-mcp-adapter)
 - eggent_list_pipelines / eggent_start_pipeline
 ```
 
@@ -191,21 +189,20 @@ You can manage skills from the Eggent UI, but the runtime behavior is pi's skill
 MCP servers are configured per Eggent project:
 
 ```text
-data/projects/<projectId>/mcp.json
+data/projects/<projectId>/.mcp.json
 ```
 
-When that project runs as a pi agent, Eggent connects to the configured MCP servers and exposes their tools to pi as bridge tools:
+When that project runs as a pi agent, pi-mcp-adapter exposes configured MCP servers through its proxy tool:
 
 ```text
-eggent_mcp_<serverId>_<toolName>
+mcp
 ```
 
 Example:
 
 ```text
-eggent_mcp_notion_search
-eggent_mcp_crm_get_contact
-eggent_mcp_signature_send
+mcp({ server: "notion" })
+mcp({ tool: "notion_search", args: "{...}" })
 ```
 
 pi can also configure project MCP via tools:
@@ -271,8 +268,6 @@ eggent_memory_delete
 
 eggent_list_pipelines
 eggent_start_pipeline
-
-eggent_mcp_*
 ```
 
 This means pi can manage Eggent configuration through normal tool calls.
@@ -438,8 +433,7 @@ Each project has its own directory-backed files:
 context.md
 memory.md
 skills/
-mcp.json
-cron.json
+.mcp.json
 model.json
 regular project files
 ```
@@ -795,13 +789,13 @@ GET /api/projects/<projectId>/pi-config
 Verify project MCP config:
 
 ```text
-data/projects/<projectId>/mcp.json
+data/projects/<projectId>/.mcp.json
 ```
 
 Then restart the chat/session. MCP tools appear as:
 
 ```text
-eggent_mcp_<serverId>_<toolName>
+mcp
 ```
 
 ### Skill is not being used

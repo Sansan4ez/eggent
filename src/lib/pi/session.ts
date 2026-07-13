@@ -78,7 +78,9 @@ function buildEggentProjectContext(options: {
       ? "- Use pi-mcp-adapter's mcp proxy tool for MCP servers configured in this project's .mcp.json."
       : "- Project MCP tools are available through pi-mcp-adapter after switching into a project.",
     "- Use pi-web-access tools (web_search, fetch_content, get_search_content) for internet access when available.",
-    "- eggent_list_pipelines / eggent_start_pipeline for multi-project pipelines.",
+    "- eggent_manage_schedules for listing or clearing pi-subagents scheduled tasks. Do not use Agent.schedule to manage existing schedules.",
+    "- eggent_list_pipelines / eggent_start_pipeline for existing configured pipelines.",
+    "- eggent_start_project_sequence for ad-hoc requests that name project ids in order, such as 'first in project A, then in project B'.",
   ]
     .filter(Boolean)
     .join("\n");

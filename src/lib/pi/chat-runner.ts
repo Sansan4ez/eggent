@@ -1,6 +1,7 @@
 import { createUIMessageStream } from "ai";
 import type { UIMessage } from "ai";
 import { createEggentPiSession } from "@/lib/pi/session";
+import { retainPiScheduleSession, takeRetainedPiScheduleSession } from "@/lib/pi/schedule-host";
 import type { PiChatRunOptions, PiToolRecord } from "@/lib/pi/types";
 import { getChat, saveChat } from "@/lib/storage/chat-store";
 import type { ChatMessage } from "@/lib/types";
@@ -43,6 +44,83 @@ function getToolResult(event: Record<string, unknown>) {
 
 function normalizeToolInput(input: unknown): Record<string, unknown> {
   return asRecord(input) ?? {};
+}
+
+function hasScheduleManagementIntent(text: string): boolean {
+  const normalized = text.toLowerCase();
+  const mentionsSchedules =
+    /\b(scheduled|schedule|schedules|reminders?|jobs?)\b/.test(normalized) ||
+    /(запланирован|расписани|напоминани|задач)/i.test(text);
+  const managementVerb =
+    /\b(cancel|delete|remove|clear|list|show|what|which)\b/.test(normalized) ||
+    /(убери|удали|отмени|очисти|покажи|выведи|какие|список)/i.test(text);
+  return mentionsSchedules && managementVerb;
+}
+
+function hasScheduleIntent(text: string): boolean {
+  if (hasScheduleManagementIntent(text)) return false;
+  const normalized = text.toLowerCase();
+  return (
+    /\b(in|after)\s+\d+\s*(seconds?|secs?|minutes?|mins?|hours?|days?)\b/.test(normalized) ||
+    /\b(tomorrow|tonight|daily|weekly|monthly|every\s+\w+|remind\s+me|schedule)\b/.test(normalized) ||
+    /\b(at)\s+\d{1,2}(:\d{2})?\s*(am|pm)?\b/.test(normalized) ||
+    /через\s+\d+\s*(секунд[уы]?|сек\.?|минут[уы]?|мин\.?|час(а|ов)?|дн(я|ей)?)/i.test(text) ||
+    /(завтра|послезавтра|сегодня\s+в|напомни|напомнить|по\s+расписанию|кажд(ый|ую|ое)|ежедневно|еженедельно)/i.test(text)
+  );
+}
+
+function applySchedulingToolPolicy(
+  session: {
+    getActiveToolNames: () => string[];
+    setActiveToolsByName: (toolNames: string[]) => void;
+    getToolDefinition?: (toolName: string) => unknown;
+  },
+  text: string
+) {
+  const activeTools = session.getActiveToolNames();
+  if (hasScheduleManagementIntent(text)) {
+    session.setActiveToolsByName(activeTools.filter((toolName) => toolName !== "Agent" && toolName !== "bash"));
+    return;
+  }
+  if (hasScheduleIntent(text)) {
+    if (activeTools.includes("bash")) {
+      session.setActiveToolsByName(activeTools.filter((toolName) => toolName !== "bash"));
+    }
+    return;
+  }
+
+  // If a retained scheduler session was previously used for a scheduling turn,
+  // restore bash for ordinary follow-up work.
+  if (!activeTools.includes("bash") && session.getToolDefinition?.("bash")) {
+    session.setActiveToolsByName([...activeTools, "bash"]);
+  }
+}
+
+function withSchedulingDirective(text: string): string {
+  if (hasScheduleManagementIntent(text)) {
+    return [
+      "Eggent schedule-management directive:",
+      "- This user request asks to inspect or modify existing scheduled tasks.",
+      "- Do not create a new scheduled Agent for this request.",
+      "- Use eggent_manage_schedules with action=\"list\" or action=\"clear\".",
+      "- For requests like 'убери все запланированные задачи', call eggent_manage_schedules with action=\"clear\" and scope=\"all\" unless the user explicitly says current project only.",
+      "",
+      "User request:",
+      text,
+    ].join("\n");
+  }
+
+  if (!hasScheduleIntent(text)) return text;
+  return [
+    "Eggent scheduling directive:",
+    "- This user request asks for delayed/scheduled execution.",
+    "- Do not emulate scheduling with bash, sleep, shell loops, at, or OS cron.",
+    "- Use pi-subagents by calling the Agent tool with its schedule parameter (for example schedule=\"+30s\" or a 6-field cron expression).",
+    "- The scheduled Agent prompt should contain the actual work to perform at fire time.",
+    "",
+    "User request:",
+    text,
+  ].join("\n");
 }
 
 async function persistUserMessage(options: PiChatRunOptions, userMessageId: string) {
@@ -120,7 +198,7 @@ export async function runPiAgentText(options: PiChatRunOptions & { runtimeData?:
 
   await persistUserMessage({ ...options, userMessage: prompt }, userMessageId);
 
-  const session = await createEggentPiSession({
+  const session = takeRetainedPiScheduleSession(options.chatId) ?? await createEggentPiSession({
     cwd: options.cwd,
     agentDir: options.agentDir,
     tools: options.tools,
@@ -172,7 +250,8 @@ export async function runPiAgentText(options: PiChatRunOptions & { runtimeData?:
   });
 
   try {
-    await session.prompt(prompt);
+    applySchedulingToolPolicy(session, prompt);
+    await session.prompt(withSchedulingDirective(prompt));
     await persistAssistantMessage({
       chatId: options.chatId,
       assistantText,
@@ -181,7 +260,12 @@ export async function runPiAgentText(options: PiChatRunOptions & { runtimeData?:
     return assistantText;
   } finally {
     unsubscribe();
-    session.dispose();
+    const retained = await retainPiScheduleSession({
+      chatId: options.chatId,
+      projectId: options.projectId,
+      session,
+    });
+    if (!retained) session.dispose();
   }
 }
 
@@ -192,7 +276,7 @@ export function createPiChatUIMessageStream(options: PiChatRunOptions) {
     async execute({ writer }) {
       await persistUserMessage(options, userMessageId);
 
-      const session = await createEggentPiSession({
+      const session = takeRetainedPiScheduleSession(options.chatId) ?? await createEggentPiSession({
         cwd: options.cwd,
         agentDir: options.agentDir,
         tools: options.tools,
@@ -280,7 +364,8 @@ export function createPiChatUIMessageStream(options: PiChatRunOptions) {
       });
 
       try {
-        await session.prompt(options.userMessage);
+        applySchedulingToolPolicy(session, options.userMessage);
+        await session.prompt(withSchedulingDirective(options.userMessage));
         if (textStarted) {
           writer.write({ type: "text-end", id: textId });
         }
@@ -291,7 +376,12 @@ export function createPiChatUIMessageStream(options: PiChatRunOptions) {
         });
       } finally {
         unsubscribe();
-        session.dispose();
+        const retained = await retainPiScheduleSession({
+          chatId: options.chatId,
+          projectId: options.projectId,
+          session,
+        });
+        if (!retained) session.dispose();
       }
     },
     onError: (error) => {

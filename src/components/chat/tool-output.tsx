@@ -11,7 +11,6 @@ import {
   FileText,
   Bot,
   Puzzle,
-  CalendarClock,
   FolderOpen,
 } from "lucide-react";
 import { CodeBlock } from "./code-block";
@@ -44,7 +43,6 @@ const TOOL_ICONS: Record<string, React.ElementType> = {
   upsert_mcp_server: Puzzle,
   delete_mcp_server: Puzzle,
   mcp: Puzzle,
-  cron: CalendarClock,
   list_projects: FolderOpen,
   get_current_project: FolderOpen,
   switch_project: FolderOpen,
@@ -73,7 +71,6 @@ const TOOL_LABELS: Record<string, string> = {
   upsert_mcp_server: "Upsert MCP Server",
   delete_mcp_server: "Delete MCP Server",
   mcp: "MCP",
-  cron: "Cron",
   list_projects: "List Projects",
   get_current_project: "Current Project",
   switch_project: "Switch Project",

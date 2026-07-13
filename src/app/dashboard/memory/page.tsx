@@ -19,7 +19,7 @@ export default function MemoryPage() {
                 <h1 className="text-2xl font-semibold">RAG memory was removed</h1>
                 <p className="text-sm text-muted-foreground">
                   Eggent now stores project memory as plain Markdown in each project directory: <code>memory.md</code>.
-                  Open a project to edit its context, memory, skills, MCP, cron, and model settings.
+                  Open a project to edit its context, memory, skills, MCP, and model settings.
                 </p>
                 <Button asChild>
                   <Link href="/dashboard/projects">Open Projects</Link>

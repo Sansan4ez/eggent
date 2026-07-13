@@ -7,12 +7,15 @@ import { useRouter, usePathname } from "next/navigation";
 import {
   Cable,
   Bot,
+  CalendarClock,
   FolderOpen,
   GitBranch,
   LifeBuoy,
   LogOut,
   MessageSquarePlus,
   MessagesSquare,
+  Send,
+  Settings,
   Trash2,
 } from "lucide-react";
 import { useAppStore } from "@/store/app-store";
@@ -304,9 +307,33 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             </SidebarMenuItem>
             <SidebarMenuItem>
               <SidebarMenuButton asChild>
+                <Link href="/dashboard/schedules">
+                  <CalendarClock className="size-4" />
+                  <span>Schedules</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild>
+                <Link href="/dashboard/messengers">
+                  <Send className="size-4" />
+                  <span>Messengers</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild>
                 <Link href="/dashboard/api">
                   <Cable className="size-4" />
                   <span>API</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+            <SidebarMenuItem>
+              <SidebarMenuButton asChild>
+                <Link href="/dashboard/settings">
+                  <Settings className="size-4" />
+                  <span>Settings</span>
                 </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>

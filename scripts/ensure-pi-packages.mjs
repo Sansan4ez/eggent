@@ -6,6 +6,7 @@ import os from "node:os";
 const DEFAULT_PACKAGES = [
   "npm:pi-web-access",
   "npm:pi-mcp-adapter",
+  "npm:@tintinweb/pi-subagents",
 ];
 
 function truthy(value) {

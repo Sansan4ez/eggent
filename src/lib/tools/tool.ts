@@ -18,7 +18,6 @@ import {
 import { memorySave, memoryLoad, memoryDelete } from "@/lib/tools/memory-tools";
 import { knowledgeQuery } from "@/lib/tools/knowledge-query";
 import { callSubordinate } from "@/lib/tools/call-subordinate";
-import { createCronTool } from "@/lib/tools/cron-tool";
 import { installPackages } from "@/lib/tools/install-orchestrator";
 import { loadPdf } from "@/lib/memory/loaders/pdf-loader";
 import {
@@ -1362,8 +1361,6 @@ export function createAgentTools(
       },
     });
   }
-
-  tools.cron = createCronTool(context);
 
   // Load skill tool — load full instructions when model activates a project skill (Agent Skills integrate-skills)
   if (context.projectId) {
