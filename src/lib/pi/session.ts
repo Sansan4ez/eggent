@@ -9,6 +9,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { createEggentPiTools } from "@/lib/pi/eggent-tools";
 import type { PiSessionOptions } from "@/lib/pi/types";
+import { getChatFiles } from "@/lib/storage/chat-files-store";
+import type { ChatFile } from "@/lib/types";
 import {
   ensureProjectMcpAdapterConfig,
   getProject,
@@ -32,6 +34,27 @@ function resolveCwd(options: PiSessionOptions): string {
   return rawCwd ? path.join(root, rawCwd) : root;
 }
 
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function formatChatFilesContext(chatFiles: ChatFile[]): string[] {
+  if (chatFiles.length === 0) return [];
+  const rows = chatFiles
+    .map((file) => `| ${file.name} | ${file.path} | ${formatFileSize(file.size)} |`)
+    .join("\n");
+  return [
+    "",
+    "Chat uploaded files:",
+    "These files are attached to the current chat and are available on disk. Use the built-in read tool with the absolute Path shown below, or pass that path to other file-capable tools. Do not say you cannot see uploaded files before checking this list.",
+    "| File | Path | Size |",
+    "| --- | --- | --- |",
+    rows,
+  ];
+}
+
 function buildEggentProjectContext(options: {
   projectId?: string;
   projectName?: string;
@@ -39,6 +62,7 @@ function buildEggentProjectContext(options: {
   projectInstructions?: string;
   memorySubdir: string;
   cwd: string;
+  chatFiles?: ChatFile[];
   runtimeModel?: {
     provider?: string;
     id?: string;
@@ -68,6 +92,7 @@ function buildEggentProjectContext(options: {
     "",
     "Project instructions:",
     options.projectInstructions?.trim() || "No project-specific instructions configured.",
+    ...formatChatFilesContext(options.chatFiles ?? []),
     "",
     "Available Eggent bridge tools:",
     "- list_projects / create_project / switch_project for navigating Eggent projects.",
@@ -79,6 +104,9 @@ function buildEggentProjectContext(options: {
       : "- Project MCP tools are available through pi-mcp-adapter after switching into a project.",
     "- Use pi-web-access tools (web_search, fetch_content, get_search_content) for internet access when available.",
     "- eggent_manage_schedules for listing or clearing pi-subagents scheduled tasks. Do not use Agent.schedule to manage existing schedules.",
+    options.chatFiles?.length
+      ? "- Uploaded chat files are listed above. Read them by absolute path when the user asks about attached/uploaded files."
+      : "- No uploaded chat files are currently attached to this chat.",
     "- eggent_list_pipelines / eggent_start_pipeline for existing configured pipelines.",
     "- eggent_start_project_sequence for ad-hoc requests that name project ids in order, such as 'first in project A, then in project B'.",
   ]
@@ -153,6 +181,7 @@ export async function createEggentPiSession(options: PiSessionOptions = {}) {
         path.join(skill.skillDir, "SKILL.md")
       )
     : [];
+  const chatFiles = options.chatId ? await getChatFiles(options.chatId) : [];
   const corePiToolsOnly = options.corePiToolsOnly === true;
 
   const projectContext = buildEggentProjectContext({
@@ -162,6 +191,7 @@ export async function createEggentPiSession(options: PiSessionOptions = {}) {
     projectInstructions: project?.instructions,
     memorySubdir,
     cwd,
+    chatFiles,
     runtimeModel: configuredModel
       ? {
           provider: configuredModel.provider,
