@@ -134,17 +134,29 @@ function TreeNode({
   }, [refreshToken, type, expanded, loadChildren]);
 
   const handleClick = () => {
-    if (type === "file" && projectId !== "none") {
-      const projectFileRoutes: Record<string, string> = {
-        "context.md": "context",
-        "memory.md": "memory",
-        "mcp.json": "mcp",
-        ".mcp.json": "mcp",
-        "model.json": "settings",
-      };
-      const route = projectFileRoutes[relativePath];
-      if (route) {
-        router.push(`/dashboard/projects/${projectId}/${route}`);
+    if (type === "file") {
+      if (projectId !== "none") {
+        const projectFileRoutes: Record<string, string> = {
+          "context.md": "context",
+          "memory.md": "memory",
+          "mcp.json": "mcp",
+          ".mcp.json": "mcp",
+          "model.json": "settings",
+        };
+        const route = projectFileRoutes[relativePath];
+        if (route) {
+          router.push(`/dashboard/projects/${projectId}/${route}`);
+          return;
+        }
+      }
+
+      if (downloadHref) {
+        const link = document.createElement("a");
+        link.href = downloadHref;
+        link.download = name;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
       }
       return;
     }
