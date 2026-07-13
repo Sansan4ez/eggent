@@ -26,24 +26,30 @@ fix_auth_file() {
 # Bind-mounted ./data is often created as root on VPS hosts. The container runs
 # as node (uid 1000), so fix ownership before creating pi-agent/cache dirs.
 DATA_ROOT="/app/data"
-sudo mkdir -p \
-  "$DATA_ROOT" \
-  "${PI_CODING_AGENT_DIR:-/app/data/pi-agent}" \
-  "${TMPDIR:-/app/data/tmp}" \
-  "${PLAYWRIGHT_BROWSERS_PATH:-/app/data/ms-playwright}" \
-  "${npm_config_cache:-/app/data/npm-cache}" \
-  "${XDG_CACHE_HOME:-/app/data/.cache}" >/dev/null 2>&1 || true
-sudo chown -R node:node "$DATA_ROOT" >/dev/null 2>&1 || true
-sudo chmod u+rwX "$DATA_ROOT" >/dev/null 2>&1 || true
+PI_AGENT_DIR="${PI_CODING_AGENT_DIR:-/app/data/pi-agent}"
+RUNTIME_DIRS=(
+  "$PI_AGENT_DIR"
+  "${TMPDIR:-/app/data/tmp}"
+  "${PLAYWRIGHT_BROWSERS_PATH:-/app/data/ms-playwright}"
+  "${npm_config_cache:-/app/data/npm-cache}"
+  "${XDG_CACHE_HOME:-/app/data/.cache}"
+)
+
+# Do not hide failures here: continuing with an unwritable bind mount only
+# produces a less useful EACCES error later in ensure-pi-packages.mjs.
+sudo mkdir -p "$DATA_ROOT" "${RUNTIME_DIRS[@]}"
+sudo chown node:node "$DATA_ROOT"
+for dir in "${RUNTIME_DIRS[@]}"; do
+  sudo chown -R node:node "$dir"
+  sudo chmod u+rwX "$dir"
+done
 
 fix_auth_dir "/app/data/.codex"
 fix_auth_dir "/app/data/.gemini"
 
 fix_auth_file "/app/data/.codex/auth.json"
 fix_auth_file "/app/data/.gemini/oauth_creds.json"
-mkdir -p "${PI_CODING_AGENT_DIR:-/app/data/pi-agent}" >/dev/null 2>&1 || true
-sudo chown -R node:node "${PI_CODING_AGENT_DIR:-/app/data/pi-agent}" >/dev/null 2>&1 || true
-sudo chmod 700 "${PI_CODING_AGENT_DIR:-/app/data/pi-agent}" >/dev/null 2>&1 || true
+sudo chmod 700 "$PI_AGENT_DIR"
 
 fix_auth_file "/app/data/.gemini/settings.json"
 
