@@ -1,3 +1,7 @@
+import fs from "fs";
+import path from "path";
+import { randomBytes } from "crypto";
+
 export const AUTH_COOKIE_NAME = "eggent_auth";
 export const AUTH_SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
 
@@ -28,10 +32,25 @@ function parseBooleanEnv(value: string | undefined): boolean | null {
 }
 
 function getSessionSecret(): string {
-  return (
-    process.env.EGGENT_AUTH_SECRET?.trim() ||
-    "eggent-default-auth-secret-change-me"
-  );
+  const envSecret = process.env.EGGENT_AUTH_SECRET?.trim();
+  if (envSecret) return envSecret;
+
+  const secretPath = path.join(process.cwd(), "data", "settings", "auth-secret");
+  try {
+    const existing = fs.readFileSync(secretPath, "utf-8").trim();
+    if (existing) return existing;
+  } catch {
+    // Generate below.
+  }
+
+  const generated = randomBytes(32).toString("hex");
+  try {
+    fs.mkdirSync(path.dirname(secretPath), { recursive: true });
+    fs.writeFileSync(secretPath, generated, { mode: 0o600 });
+  } catch {
+    // Last-resort fallback for read-only environments. Sessions will reset on restart.
+  }
+  return generated;
 }
 
 function utf8ToBytes(value: string): Uint8Array {
