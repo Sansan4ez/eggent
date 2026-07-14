@@ -7,6 +7,7 @@ import {
   getTelegramIntegrationStoredSettings,
   saveTelegramIntegrationStoredSettings,
 } from "@/lib/storage/telegram-integration-store";
+import { setEggentTelegramBotCommands } from "@/lib/telegram/bot-commands";
 
 interface TelegramApiResponse {
   ok?: boolean;
@@ -129,6 +130,7 @@ export async function POST(req: NextRequest) {
       webhookUrl,
       webhookSecret,
     });
+    await setEggentTelegramBotCommands(botToken);
 
     const settings = await getTelegramIntegrationPublicSettings();
 

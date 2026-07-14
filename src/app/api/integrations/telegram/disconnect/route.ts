@@ -4,6 +4,7 @@ import {
   getTelegramIntegrationStoredSettings,
   saveTelegramIntegrationStoredSettings,
 } from "@/lib/storage/telegram-integration-store";
+import { deleteEggentTelegramBotCommands } from "@/lib/telegram/bot-commands";
 import { telegramPollingService } from "@/lib/telegram/polling-service";
 
 interface TelegramApiResponse {
@@ -50,6 +51,7 @@ export async function POST() {
     if (botToken) {
       try {
         await deleteTelegramWebhook(botToken);
+        await deleteEggentTelegramBotCommands(botToken);
         webhookRemoved = true;
       } catch (error) {
         webhookWarning =

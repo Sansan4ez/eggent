@@ -7,6 +7,7 @@ import {
     processTelegramUpdate,
     type TelegramUpdate,
 } from "@/lib/telegram/telegram-message-handler";
+import { setEggentTelegramBotCommands } from "@/lib/telegram/bot-commands";
 
 interface TelegramApiResponse {
     ok?: boolean;
@@ -67,6 +68,7 @@ class TelegramPollingService {
 
         // Delete webhook if exists to ensure polling works
         await this.deleteWebhook(runtimeConfig.botToken);
+        await setEggentTelegramBotCommands(runtimeConfig.botToken);
 
         // Start first poll immediately
         this.scheduleNextPoll(0);

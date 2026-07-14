@@ -5,6 +5,7 @@ import {
     detectTelegramMode,
     type TelegramIntegrationRuntimeConfig,
 } from "@/lib/storage/telegram-integration-store";
+import { setEggentTelegramBotCommands } from "@/lib/telegram/bot-commands";
 import { telegramPollingService } from "@/lib/telegram/polling-service";
 
 let lifecycleInitialized = false;
@@ -91,6 +92,8 @@ async function setupTelegramWebhook(
             `Failed to set webhook: ${payload?.description || response.statusText}`
         );
     }
+
+    await setEggentTelegramBotCommands(botToken);
 }
 
 export async function migrateToWebhook(
@@ -112,6 +115,8 @@ export async function migrateToPolling(
 ): Promise<void> {
     // Delete webhook
     await deleteTelegramWebhook(runtime.botToken);
+
+    await setEggentTelegramBotCommands(runtime.botToken);
 
     // Start polling
     if (!telegramPollingService.status.isRunning) {
