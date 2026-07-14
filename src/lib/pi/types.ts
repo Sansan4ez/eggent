@@ -19,6 +19,34 @@ export interface PiChatRunOptions extends PiSessionOptions {
   projectId?: string;
 }
 
+export interface PiRuntimeStats {
+  model?: {
+    provider?: string;
+    id?: string;
+    name?: string;
+  };
+  lastTurn?: {
+    input?: number;
+    output?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    total?: number;
+  };
+  session?: {
+    input?: number;
+    output?: number;
+    cacheRead?: number;
+    cacheWrite?: number;
+    total?: number;
+    cost?: number;
+  };
+  context?: {
+    tokens: number | null;
+    contextWindow: number;
+    percent: number | null;
+  };
+}
+
 export type PiToolStatus = "running" | "completed" | "error";
 
 export interface PiToolRecord {

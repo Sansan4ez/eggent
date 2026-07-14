@@ -8,10 +8,28 @@ import { ChatInput } from "./chat-input";
 import { useAppStore } from "@/store/app-store";
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import type { ChatMessage } from "@/lib/types";
+import type { PiRuntimeStats } from "@/lib/pi/types";
 import { useBackgroundSync } from "@/hooks/use-background-sync";
 import { generateClientId } from "@/lib/utils";
 
 /** Convert stored ChatMessage to UIMessage (parts format for useChat) */
+function isPiRuntimeStats(value: unknown): value is PiRuntimeStats {
+  return typeof value === "object" && value !== null;
+}
+
+function getLatestPiRuntimeStats(messages: UIMessage[]): PiRuntimeStats | null {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    for (let j = message.parts.length - 1; j >= 0; j -= 1) {
+      const part = message.parts[j] as { type?: string; data?: unknown };
+      if (part.type === "data-piStats" && isPiRuntimeStats(part.data)) {
+        return part.data;
+      }
+    }
+  }
+  return null;
+}
+
 function chatMessagesToUIMessages(chatMessages: ChatMessage[]): UIMessage[] {
   const result: UIMessage[] = [];
 
@@ -365,6 +383,8 @@ export function ChatPanel() {
     },
   });
 
+  const runtimeStats = useMemo(() => getLatestPiRuntimeStats(messages), [messages]);
+
   // Don't overwrite messages while a request is in flight (avoids "blink" on new chat)
   const statusRef = useRef(status);
   statusRef.current = status;
@@ -595,6 +615,7 @@ export function ChatPanel() {
         isLoading={isLoading}
         chatId={activeChatId || internalChatId}
         focusSignal={inputFocusSignal}
+        runtimeStats={runtimeStats}
       />
     </div>
   );

@@ -2,7 +2,7 @@ import { createUIMessageStream } from "ai";
 import type { UIMessage } from "ai";
 import { createEggentPiSession } from "@/lib/pi/session";
 import { retainPiScheduleSession, takeRetainedPiScheduleSession } from "@/lib/pi/schedule-host";
-import type { PiChatRunOptions, PiToolRecord } from "@/lib/pi/types";
+import type { PiChatRunOptions, PiRuntimeStats, PiToolRecord } from "@/lib/pi/types";
 import { getChat, saveChat } from "@/lib/storage/chat-store";
 import type { ChatMessage } from "@/lib/types";
 
@@ -40,6 +40,67 @@ function getToolArgs(event: Record<string, unknown>) {
 
 function getToolResult(event: Record<string, unknown>) {
   return event.result ?? event.output ?? event.partialResult ?? "";
+}
+
+function asUsage(value: unknown): PiRuntimeStats["lastTurn"] | undefined {
+  const record = asRecord(value);
+  if (!record) return undefined;
+  const input = typeof record.input === "number" ? record.input : undefined;
+  const output = typeof record.output === "number" ? record.output : undefined;
+  const cacheRead = typeof record.cacheRead === "number" ? record.cacheRead : undefined;
+  const cacheWrite = typeof record.cacheWrite === "number" ? record.cacheWrite : undefined;
+  const total = [input, output, cacheRead, cacheWrite]
+    .filter((item): item is number => typeof item === "number")
+    .reduce((sum, item) => sum + item, 0);
+  return { input, output, cacheRead, cacheWrite, total };
+}
+
+function buildPiRuntimeStats(session: {
+  model?: { provider?: string; id?: string; name?: string };
+  getSessionStats?: () => {
+    tokens?: { input?: number; output?: number; cacheRead?: number; cacheWrite?: number; total?: number };
+    cost?: number;
+    contextUsage?: PiRuntimeStats["context"];
+  };
+  getContextUsage?: () => PiRuntimeStats["context"] | undefined;
+}, lastTurn?: PiRuntimeStats["lastTurn"]): PiRuntimeStats {
+  let sessionStats: ReturnType<NonNullable<typeof session.getSessionStats>> | undefined;
+  try {
+    sessionStats = session.getSessionStats?.();
+  } catch {
+    sessionStats = undefined;
+  }
+
+  let context: PiRuntimeStats["context"] | undefined = sessionStats?.contextUsage;
+  if (!context) {
+    try {
+      context = session.getContextUsage?.();
+    } catch {
+      context = undefined;
+    }
+  }
+
+  return {
+    model: session.model
+      ? {
+          provider: session.model.provider,
+          id: session.model.id,
+          name: session.model.name,
+        }
+      : undefined,
+    lastTurn,
+    session: sessionStats?.tokens
+      ? {
+          input: sessionStats.tokens.input,
+          output: sessionStats.tokens.output,
+          cacheRead: sessionStats.tokens.cacheRead,
+          cacheWrite: sessionStats.tokens.cacheWrite,
+          total: sessionStats.tokens.total,
+          cost: sessionStats.cost,
+        }
+      : undefined,
+    context,
+  };
 }
 
 function normalizeToolInput(input: unknown): Record<string, unknown> {
@@ -286,8 +347,19 @@ export function createPiChatUIMessageStream(options: PiChatRunOptions) {
 
       let assistantText = "";
       let textStarted = false;
+      let lastTurnUsage: PiRuntimeStats["lastTurn"] | undefined;
       const textId = `pi-text-${crypto.randomUUID()}`;
       const tools = new Map<string, PiToolRecord>();
+
+      const emitStats = (stats: PiRuntimeStats) => {
+        writer.write({
+          type: "data-piStats",
+          id: "pi-runtime-stats",
+          data: stats,
+        });
+      };
+
+      emitStats(buildPiRuntimeStats(session));
 
       const ensureTextStarted = () => {
         if (textStarted) return;
@@ -306,6 +378,20 @@ export function createPiChatUIMessageStream(options: PiChatRunOptions) {
             assistantText += assistantEvent.delta;
             writer.write({ type: "text-delta", id: textId, delta: assistantEvent.delta });
           }
+          return;
+        }
+
+        if (record.type === "message_end") {
+          const message = asRecord(record.message);
+          if (message?.role === "assistant") {
+            lastTurnUsage = asUsage(message.usage);
+            emitStats(buildPiRuntimeStats(session, lastTurnUsage));
+          }
+          return;
+        }
+
+        if (record.type === "agent_end") {
+          emitStats(buildPiRuntimeStats(session, lastTurnUsage));
           return;
         }
 
@@ -366,6 +452,7 @@ export function createPiChatUIMessageStream(options: PiChatRunOptions) {
       try {
         applySchedulingToolPolicy(session, options.userMessage);
         await session.prompt(withSchedulingDirective(options.userMessage));
+        emitStats(buildPiRuntimeStats(session, lastTurnUsage));
         if (textStarted) {
           writer.write({ type: "text-end", id: textId });
         }

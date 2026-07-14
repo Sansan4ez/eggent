@@ -4,6 +4,30 @@ import { useRef, useCallback, useState, useEffect } from "react";
 import { Send, Square, Paperclip, X, FileIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ChatFile } from "@/lib/types";
+import type { PiRuntimeStats } from "@/lib/pi/types";
+
+function formatTokenCount(value?: number | null) {
+  if (value === undefined || value === null) return "—";
+  if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `${(value / 1_000).toFixed(1)}k`;
+  return String(value);
+}
+
+function formatContextUsage(stats?: PiRuntimeStats | null) {
+  const context = stats?.context;
+  if (!context) return "ctx —";
+  const tokens = context.tokens === null ? "—" : formatTokenCount(context.tokens);
+  const window = formatTokenCount(context.contextWindow);
+  const percent = context.percent === null ? "—" : `${Math.round(context.percent)}%`;
+  return `ctx ${tokens}/${window} (${percent})`;
+}
+
+function formatModelName(stats?: PiRuntimeStats | null) {
+  const model = stats?.model;
+  if (!model) return "model —";
+  const id = model.name || model.id || "unknown";
+  return model.provider ? `${model.provider}/${id}` : id;
+}
 
 interface ChatInputProps {
   input: string;
@@ -15,6 +39,7 @@ interface ChatInputProps {
   chatId?: string;
   onFilesUploaded?: (files: ChatFile[]) => void;
   focusSignal?: number;
+  runtimeStats?: PiRuntimeStats | null;
 }
 
 export function ChatInput({
@@ -27,6 +52,7 @@ export function ChatInput({
   chatId,
   onFilesUploaded,
   focusSignal,
+  runtimeStats,
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -301,9 +327,12 @@ export function ChatInput({
             )}
           </div>
         </div>
-        <p className="mt-2 text-center text-xs text-muted-foreground">
-          AI agent with code execution, memory, and web search capabilities
-        </p>
+        <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+          <span className="font-mono">{formatModelName(runtimeStats)}</span>
+          <span className="font-mono">in {formatTokenCount(runtimeStats?.lastTurn?.input)}</span>
+          <span className="font-mono">out {formatTokenCount(runtimeStats?.lastTurn?.output)}</span>
+          <span className="font-mono">{formatContextUsage(runtimeStats)}</span>
+        </div>
       </div>
     </div>
   );
