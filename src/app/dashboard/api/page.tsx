@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { ExternalApiTokenManager } from "@/components/external-api-token-manager";
 import { SiteHeader } from "@/components/site-header";
@@ -8,6 +9,21 @@ function CodeBlock({ code }: { code: string }) {
     <pre className="rounded-lg border bg-muted/40 p-3 text-xs overflow-x-auto whitespace-pre-wrap">
       <code>{code}</code>
     </pre>
+  );
+}
+
+function InfoCard({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <section className="rounded-lg border bg-card p-4 space-y-3">
+      <h3 className="text-lg font-medium">{title}</h3>
+      {children}
+    </section>
   );
 }
 
@@ -23,180 +39,156 @@ export default function ApiPage() {
               <div className="space-y-2">
                 <h2 className="text-2xl font-semibold">External Message API</h2>
                 <p className="text-sm text-muted-foreground">
-                  Endpoint for sending messages from external integrations (Telegram, bots, webhooks)
-                  with persistent project/chat context.
+                  Send messages to Eggent from your app, workflow, bot, or webhook. Eggent keeps
+                  session state by <span className="font-mono">sessionId</span>, so follow-up calls
+                  can continue the same project/chat context.
                 </p>
               </div>
 
-              <section className="rounded-lg border bg-card p-4 space-y-3">
-                <div className="flex items-center gap-2">
+              <InfoCard title="1. Generate an API token">
+                <ExternalApiTokenManager />
+              </InfoCard>
+
+              <InfoCard title="2. Connect to the endpoint">
+                <div className="flex flex-wrap items-center gap-2">
                   <span className="rounded border bg-muted px-2 py-0.5 text-xs font-medium">
                     POST
                   </span>
                   <span className="font-mono text-sm">/api/external/message</span>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  Required fields: <span className="font-mono">sessionId</span>,{" "}
-                  <span className="font-mono">message</span>.
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Auth: header <span className="font-mono">Authorization: Bearer &lt;token&gt;</span> (from Token Management or <span className="font-mono">EXTERNAL_API_TOKEN</span>).
-                </p>
-                <CodeBlock
-                  code={`{
-  "sessionId": "user-42",
-  "message": "hello",
-  "projectId": "my-project-id",
-  "chatId": "optional-chat-id",
-  "currentPath": "optional/relative/path"
-}`}
-                />
-              </section>
-
-              <section className="rounded-lg border bg-card p-4 space-y-3">
-                <h3 className="text-lg font-medium">Telegram Integration</h3>
-                <p className="text-sm text-muted-foreground">
-                  Telegram endpoint: <span className="font-mono">POST /api/integrations/telegram</span>.
-                  It reuses the same external session context engine as{" "}
-                  <span className="font-mono">/api/external/message</span>.
-                </p>
-                <p className="text-sm text-muted-foreground">
-                  Configure credentials in <span className="font-mono">Dashboard -&gt; Messengers</span>
-                  (bot token is enough; webhook secret/url are configured automatically).
-                </p>
-
-                <div className="space-y-2">
-                  <h4 className="text-sm font-medium">Connection Modes</h4>
-                  <ul className="list-disc pl-5 space-y-1 text-sm text-muted-foreground">
-                    <li><strong>Webhook</strong> (default for public HTTPS URLs): Telegram pushes updates to your server. Requires a public HTTPS URL.</li>
-                    <li><strong>Long Polling</strong> (default for localhost): Your server periodically fetches updates from Telegram. Works without HTTPS, perfect for local development.</li>
-                    <li><strong>Auto</strong> (recommended): Automatically selects the best mode based on your Public Base URL configuration.</li>
-                  </ul>
-                </div>
-
-                <div className="space-y-2">
-                  <h4 className="text-sm font-medium">Webhook Setup (Production)</h4>
-                  <CodeBlock
-                    code={`curl -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "url": "https://YOUR_PUBLIC_BASE_URL/api/integrations/telegram",
-    "secret_token": "'$TELEGRAM_WEBHOOK_SECRET'"
-  }'`}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <h4 className="text-sm font-medium">Long Polling API (Development)</h4>
-                  <p className="text-sm text-muted-foreground">
-                    When using long polling mode, control the polling service via API:
+                <div className="space-y-1 text-sm text-muted-foreground">
+                  <p>
+                    Auth header: <span className="font-mono">Authorization: Bearer &lt;token&gt;</span>
                   </p>
-                  <CodeBlock
-                    code={`# Get polling status
-GET /api/integrations/telegram/polling
-
-# Start polling
-POST /api/integrations/telegram/polling
-
-# Stop polling
-DELETE /api/integrations/telegram/polling`}
-                  />
+                  <p>
+                    Required body fields: <span className="font-mono">sessionId</span> and{" "}
+                    <span className="font-mono">message</span>.
+                  </p>
                 </div>
-
-                <p className="text-sm text-muted-foreground">
-                  Supported commands: <span className="font-mono">/start</span>,{" "}
-                  <span className="font-mono">/help</span>,{" "}
-                  <span className="font-mono">/code &lt;access_code&gt;</span>,{" "}
-                  <span className="font-mono">/new</span>.
-                </p>
-              </section>
-
-              <section className="rounded-lg border bg-card p-4 space-y-3">
-                <h3 className="text-lg font-medium">API Token Management</h3>
-                <ExternalApiTokenManager />
-              </section>
-
-              <section className="rounded-lg border bg-card p-4 space-y-3">
-                <h3 className="text-lg font-medium">How Project Context Is Resolved</h3>
-                <ol className="list-decimal pl-5 space-y-1 text-sm text-muted-foreground">
-                  <li>If request includes <span className="font-mono">projectId</span>, it is used and saved as active for this session.</li>
-                  <li>Otherwise API uses session&apos;s current active project.</li>
-                  <li>If active project is missing and only one project exists, it is selected automatically.</li>
-                  <li>If multiple projects exist and message is not about project navigation, API returns <span className="font-mono">409</span> with available projects.</li>
-                </ol>
-              </section>
-
-              <section className="rounded-lg border bg-card p-4 space-y-3">
-                <h3 className="text-lg font-medium">Project Navigation via Natural Language</h3>
-                <p className="text-sm text-muted-foreground">
-                  The agent can answer project questions and switch projects using tools:
-                  <span className="font-mono"> list_projects</span>,{" "}
-                  <span className="font-mono"> get_current_project</span>,{" "}
-                  <span className="font-mono"> switch_project</span>,{" "}
-                  <span className="font-mono"> create_project</span>.
-                  When switch/create succeeds, session context is updated automatically for next requests.
-                </p>
-              </section>
-
-              <section className="rounded-lg border bg-card p-4 space-y-3">
-                <h3 className="text-lg font-medium">Examples</h3>
-                <div className="space-y-3">
-                  <div>
-                    <p className="text-sm font-medium mb-1">1. Ask for projects</p>
-                    <CodeBlock
-                      code={`curl -X POST http://localhost:3000/api/external/message \\
+                <CodeBlock
+                  code={`curl -X POST http://localhost:3000/api/external/message \\
   -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer $EXTERNAL_API_TOKEN" \\
+  -H "Authorization: Bearer $EGGENT_API_TOKEN" \\
   -d '{
     "sessionId": "user-42",
-    "message": "what projects are available?"
+    "message": "Summarize the current project status",
+    "projectId": "optional-project-id"
   }'`}
+                />
+              </InfoCard>
+
+              <InfoCard title="Request fields">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[640px] text-sm">
+                    <thead className="text-left text-muted-foreground">
+                      <tr className="border-b">
+                        <th className="py-2 pr-4 font-medium">Field</th>
+                        <th className="py-2 pr-4 font-medium">Required</th>
+                        <th className="py-2 font-medium">Purpose</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y">
+                      <tr>
+                        <td className="py-2 pr-4 font-mono text-xs">sessionId</td>
+                        <td className="py-2 pr-4">Yes</td>
+                        <td className="py-2 text-muted-foreground">Stable external user/thread id. Used to remember context.</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 pr-4 font-mono text-xs">message</td>
+                        <td className="py-2 pr-4">Yes</td>
+                        <td className="py-2 text-muted-foreground">Text to send to the Eggent/Pi agent.</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 pr-4 font-mono text-xs">projectId</td>
+                        <td className="py-2 pr-4">No</td>
+                        <td className="py-2 text-muted-foreground">Pin or switch this external session to a project.</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 pr-4 font-mono text-xs">chatId</td>
+                        <td className="py-2 pr-4">No</td>
+                        <td className="py-2 text-muted-foreground">Reuse a specific Eggent chat instead of auto-created session chat.</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 pr-4 font-mono text-xs">currentPath</td>
+                        <td className="py-2 pr-4">No</td>
+                        <td className="py-2 text-muted-foreground">Optional relative path hint inside the selected project.</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </InfoCard>
+
+              <InfoCard title="Main use cases">
+                <div className="grid gap-3 md:grid-cols-2">
+                  <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+                    <h4 className="text-sm font-medium">Ask inside a project</h4>
+                    <CodeBlock
+                      code={`{
+  "sessionId": "user-42",
+  "projectId": "backend",
+  "message": "What should I work on next?"
+}`}
                     />
                   </div>
-
-                  <div>
-                    <p className="text-sm font-medium mb-1">2. Switch by name</p>
+                  <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+                    <h4 className="text-sm font-medium">Continue the same external thread</h4>
                     <CodeBlock
-                      code={`curl -X POST http://localhost:3000/api/external/message \\
-  -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer $EXTERNAL_API_TOKEN" \\
-  -d '{
-    "sessionId": "user-42",
-    "message": "switch to the backend project"
-  }'`}
+                      code={`{
+  "sessionId": "user-42",
+  "message": "Continue from the previous answer"
+}`}
                     />
                   </div>
-
-                  <div>
-                    <p className="text-sm font-medium mb-1">3. Send normal message after switch</p>
+                  <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+                    <h4 className="text-sm font-medium">Use a fixed Eggent chat</h4>
                     <CodeBlock
-                      code={`curl -X POST http://localhost:3000/api/external/message \\
-  -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer $EXTERNAL_API_TOKEN" \\
-  -d '{
-    "sessionId": "user-42",
-    "message": "hello"
-  }'`}
+                      code={`{
+  "sessionId": "support-user-42",
+  "chatId": "existing-chat-id",
+  "message": "Append this to the support chat"
+}`}
                     />
                   </div>
-
-                  <div>
-                    <p className="text-sm font-medium mb-1">4. Create a new project from chat</p>
+                  <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+                    <h4 className="text-sm font-medium">Send path context</h4>
                     <CodeBlock
-                      code={`curl -X POST http://localhost:3000/api/external/message \\
-  -H "Content-Type: application/json" \\
-  -H "Authorization: Bearer $EXTERNAL_API_TOKEN" \\
-  -d '{
-    "sessionId": "user-42",
-    "message": "create a new project named crm-support"
-  }'`}
+                      code={`{
+  "sessionId": "deploy-hook",
+  "projectId": "backend",
+  "currentPath": "services/api",
+  "message": "Check the deployment notes here"
+}`}
                     />
                   </div>
                 </div>
-              </section>
+                <p className="text-sm text-muted-foreground">
+                  If <span className="font-mono">projectId</span> is omitted, Eggent uses the
+                  session&apos;s last active project. If there is no active project and multiple projects
+                  exist, the API returns <span className="font-mono">409</span> with available projects.
+                </p>
+              </InfoCard>
 
-              <section className="rounded-lg border bg-card p-4 space-y-3">
-                <h3 className="text-lg font-medium">Successful Response Shape</h3>
+              <InfoCard title="JavaScript example">
+                <CodeBlock
+                  code={`const res = await fetch("https://your-eggent.example.com/api/external/message", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "Authorization": ` + "`Bearer ${process.env.EGGENT_API_TOKEN}`" + `,
+  },
+  body: JSON.stringify({
+    sessionId: "user-42",
+    projectId: "backend",
+    message: "Create a short release summary",
+  }),
+});
+
+const data = await res.json();
+console.log(data.reply);`}
+                />
+              </InfoCard>
+
+              <InfoCard title="Successful response">
                 <CodeBlock
                   code={`{
   "success": true,
@@ -207,15 +199,10 @@ DELETE /api/integrations/telegram/polling`}
     "activeProjectName": "Backend",
     "activeChatId": "b86f...",
     "currentPath": ""
-  },
-  "switchedProject": {
-    "toProjectId": "backend",
-    "toProjectName": "Backend"
-  },
-  "createdProject": null
+  }
 }`}
                 />
-              </section>
+              </InfoCard>
             </div>
           </SidebarInset>
         </div>
