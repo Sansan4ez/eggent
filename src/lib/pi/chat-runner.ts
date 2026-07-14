@@ -42,17 +42,78 @@ function getToolResult(event: Record<string, unknown>) {
   return event.result ?? event.output ?? event.partialResult ?? "";
 }
 
+function numberFromRecord(record: Record<string, unknown>, keys: string[]): number | undefined {
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "number" && Number.isFinite(value)) return value;
+  }
+  return undefined;
+}
+
+function usageTotal(usage: PiRuntimeStats["lastTurn"]): number | undefined {
+  if (!usage) return undefined;
+  if (typeof usage.total === "number") return usage.total;
+  const total = [usage.input, usage.output, usage.cacheRead, usage.cacheWrite]
+    .filter((item): item is number => typeof item === "number")
+    .reduce((sum, item) => sum + item, 0);
+  return total > 0 ? total : undefined;
+}
+
+function normalizeUsage(parts: PiRuntimeStats["lastTurn"]): PiRuntimeStats["lastTurn"] | undefined {
+  if (!parts) return undefined;
+  const total = usageTotal(parts);
+  if (
+    parts.input === undefined &&
+    parts.output === undefined &&
+    parts.cacheRead === undefined &&
+    parts.cacheWrite === undefined &&
+    total === undefined
+  ) {
+    return undefined;
+  }
+  return { ...parts, total };
+}
+
 function asUsage(value: unknown): PiRuntimeStats["lastTurn"] | undefined {
   const record = asRecord(value);
   if (!record) return undefined;
-  const input = typeof record.input === "number" ? record.input : undefined;
-  const output = typeof record.output === "number" ? record.output : undefined;
-  const cacheRead = typeof record.cacheRead === "number" ? record.cacheRead : undefined;
-  const cacheWrite = typeof record.cacheWrite === "number" ? record.cacheWrite : undefined;
-  const total = [input, output, cacheRead, cacheWrite]
-    .filter((item): item is number => typeof item === "number")
-    .reduce((sum, item) => sum + item, 0);
-  return { input, output, cacheRead, cacheWrite, total };
+  return normalizeUsage({
+    input: numberFromRecord(record, ["input", "inputTokens", "promptTokens", "prompt_tokens"]),
+    output: numberFromRecord(record, ["output", "outputTokens", "completionTokens", "completion_tokens"]),
+    cacheRead: numberFromRecord(record, ["cacheRead", "cacheReadInputTokens", "cachedInputTokens", "cache_read_input_tokens"]),
+    cacheWrite: numberFromRecord(record, ["cacheWrite", "cacheWriteInputTokens", "cacheCreationInputTokens", "cache_creation_input_tokens"]),
+    total: numberFromRecord(record, ["total", "totalTokens", "total_tokens"]),
+  });
+}
+
+function subtractUsage(
+  after?: PiRuntimeStats["lastTurn"],
+  before?: PiRuntimeStats["lastTurn"]
+): PiRuntimeStats["lastTurn"] | undefined {
+  if (!after) return undefined;
+  const diff = (field: keyof NonNullable<PiRuntimeStats["lastTurn"]>) => {
+    const afterValue = after[field];
+    if (typeof afterValue !== "number") return undefined;
+    const beforeValue = before && typeof before[field] === "number" ? before[field] : 0;
+    return Math.max(0, afterValue - beforeValue);
+  };
+  return normalizeUsage({
+    input: diff("input"),
+    output: diff("output"),
+    cacheRead: diff("cacheRead"),
+    cacheWrite: diff("cacheWrite"),
+    total: diff("total"),
+  });
+}
+
+function getSessionTokenUsage(session: {
+  getSessionStats?: () => { tokens?: PiRuntimeStats["lastTurn"] };
+}): PiRuntimeStats["lastTurn"] | undefined {
+  try {
+    return normalizeUsage(session.getSessionStats?.().tokens);
+  } catch {
+    return undefined;
+  }
 }
 
 function buildPiRuntimeStats(session: {
@@ -213,6 +274,7 @@ async function persistAssistantMessage(options: {
   chatId: string;
   assistantText: string;
   tools: PiToolRecord[];
+  runtimeStats?: PiRuntimeStats;
 }) {
   const chat = await getChat(options.chatId);
   if (!chat) return;
@@ -220,7 +282,7 @@ async function persistAssistantMessage(options: {
   const now = new Date().toISOString();
   const completedTools = options.tools.filter((tool) => tool.status !== "running");
 
-  if (options.assistantText.trim() || completedTools.length > 0) {
+  if (options.assistantText.trim() || completedTools.length > 0 || options.runtimeStats) {
     const assistantMessage: ChatMessage = {
       id: crypto.randomUUID(),
       role: "assistant",
@@ -231,6 +293,7 @@ async function persistAssistantMessage(options: {
         toolName: tool.toolName,
         args: normalizeToolInput(tool.input),
       })),
+      piRuntimeStats: options.runtimeStats,
     };
     chat.messages.push(assistantMessage);
 
@@ -268,6 +331,8 @@ export async function runPiAgentText(options: PiChatRunOptions & { runtimeData?:
   });
 
   let assistantText = "";
+  let lastTurnUsage: PiRuntimeStats["lastTurn"] | undefined;
+  const baselineUsage = getSessionTokenUsage(session);
   const tools = new Map<string, PiToolRecord>();
 
   const unsubscribe = session.subscribe((event: unknown) => {
@@ -278,6 +343,14 @@ export async function runPiAgentText(options: PiChatRunOptions & { runtimeData?:
       const assistantEvent = asRecord(record.assistantMessageEvent);
       if (assistantEvent?.type === "text_delta" && typeof assistantEvent.delta === "string") {
         assistantText += assistantEvent.delta;
+      }
+      return;
+    }
+
+    if (record.type === "message_end") {
+      const message = asRecord(record.message);
+      if (message?.role === "assistant") {
+        lastTurnUsage = asUsage(message.usage) ?? lastTurnUsage;
       }
       return;
     }
@@ -313,10 +386,12 @@ export async function runPiAgentText(options: PiChatRunOptions & { runtimeData?:
   try {
     applySchedulingToolPolicy(session, prompt);
     await session.prompt(withSchedulingDirective(prompt));
+    lastTurnUsage = subtractUsage(getSessionTokenUsage(session), baselineUsage) ?? lastTurnUsage;
     await persistAssistantMessage({
       chatId: options.chatId,
       assistantText,
       tools: [...tools.values()],
+      runtimeStats: buildPiRuntimeStats(session, lastTurnUsage),
     });
     return assistantText;
   } finally {
@@ -348,6 +423,7 @@ export function createPiChatUIMessageStream(options: PiChatRunOptions) {
       let assistantText = "";
       let textStarted = false;
       let lastTurnUsage: PiRuntimeStats["lastTurn"] | undefined;
+      const baselineUsage = getSessionTokenUsage(session);
       const textId = `pi-text-${crypto.randomUUID()}`;
       const tools = new Map<string, PiToolRecord>();
 
@@ -452,7 +528,9 @@ export function createPiChatUIMessageStream(options: PiChatRunOptions) {
       try {
         applySchedulingToolPolicy(session, options.userMessage);
         await session.prompt(withSchedulingDirective(options.userMessage));
-        emitStats(buildPiRuntimeStats(session, lastTurnUsage));
+        lastTurnUsage = subtractUsage(getSessionTokenUsage(session), baselineUsage) ?? lastTurnUsage;
+        const finalStats = buildPiRuntimeStats(session, lastTurnUsage);
+        emitStats(finalStats);
         if (textStarted) {
           writer.write({ type: "text-end", id: textId });
         }
@@ -460,6 +538,7 @@ export function createPiChatUIMessageStream(options: PiChatRunOptions) {
           chatId: options.chatId,
           assistantText,
           tools: [...tools.values()],
+          runtimeStats: finalStats,
         });
       } finally {
         unsubscribe();

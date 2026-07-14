@@ -329,8 +329,8 @@ export function ChatInput({
         </div>
         <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
           <span className="font-mono">{formatModelName(runtimeStats)}</span>
-          <span className="font-mono">in {formatTokenCount(runtimeStats?.lastTurn?.input)}</span>
-          <span className="font-mono">out {formatTokenCount(runtimeStats?.lastTurn?.output)}</span>
+          <span className="font-mono">in {formatTokenCount(runtimeStats?.lastTurn?.input ?? runtimeStats?.session?.input)}</span>
+          <span className="font-mono">out {formatTokenCount(runtimeStats?.lastTurn?.output ?? runtimeStats?.session?.output)}</span>
           <span className="font-mono">{formatContextUsage(runtimeStats)}</span>
         </div>
       </div>

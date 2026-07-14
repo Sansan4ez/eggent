@@ -2,6 +2,8 @@
 // Core type definitions for Eggent
 // ============================================================
 
+import type { PiRuntimeStats } from "@/lib/pi/types";
+
 // --- Settings ---
 
 export type ChatAuthMethod = "api_key" | "oauth";
@@ -81,6 +83,7 @@ export interface ChatMessage {
     args: Record<string, unknown>;
   }>;
   attachments?: Attachment[];
+  piRuntimeStats?: PiRuntimeStats;
 }
 
 export interface Attachment {

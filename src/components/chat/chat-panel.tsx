@@ -71,6 +71,16 @@ function chatMessagesToUIMessages(chatMessages: ChatMessage[]): UIMessage[] {
         parts.push({ type: "text" as const, text: m.content });
       }
 
+      // Keep Pi runtime stats in the message stream so the footer remains
+      // populated after the live stream is replaced by stored chat history.
+      if (m.piRuntimeStats) {
+        parts.push({
+          type: "data-piStats",
+          id: `pi-stats-${m.id}`,
+          data: m.piRuntimeStats,
+        } as UIMessage["parts"][number]);
+      }
+
       // Only add message if it has content
       if (parts.length > 0) {
         result.push({
