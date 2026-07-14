@@ -9,6 +9,7 @@ import { useAppStore } from "@/store/app-store";
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import type { ChatMessage } from "@/lib/types";
 import type { PiRuntimeStats } from "@/lib/pi/types";
+import type { ActiveChatRunStatus } from "@/lib/chat/run-status";
 import { useBackgroundSync } from "@/hooks/use-background-sync";
 import { generateClientId } from "@/lib/utils";
 
@@ -304,6 +305,14 @@ function assistantMessageHasToolOutput(message: UIMessage): boolean {
 const NO_FINAL_RESPONSE_FALLBACK =
   "Инструменты выполнились, но финальный ответ не получен. Напишите `continue`, и я завершу ответ.";
 
+function formatActiveRunLabel(run: ActiveChatRunStatus | null): string | undefined {
+  if (!run) return undefined;
+  if (run.phase === "tool" && run.toolName) return `Running ${run.toolName}...`;
+  if (run.phase === "finalizing") return "Finalizing response...";
+  if (run.phase === "starting") return "Starting agent...";
+  return "Agent is still running...";
+}
+
 export function ChatPanel() {
   const {
     activeChatId,
@@ -319,6 +328,7 @@ export function ChatPanel() {
   const [chatError, setChatError] = useState<string | null>(null);
   const [inputFocusSignal, setInputFocusSignal] = useState(0);
   const [configuredRuntimeStats, setConfiguredRuntimeStats] = useState<PiRuntimeStats | null>(null);
+  const [activeRun, setActiveRun] = useState<ActiveChatRunStatus | null>(null);
 
   // Internal chatId that stays stable during a message send.
   // Pre-generate a UUID so useChat always has a consistent id.
@@ -394,6 +404,7 @@ export function ChatPanel() {
     },
   });
 
+  const visibleChatId = activeChatId || internalChatId;
   const runtimeStats = useMemo(() => getLatestPiRuntimeStats(messages), [messages]);
   const displayRuntimeStats = useMemo(() => {
     if (!runtimeStats) return configuredRuntimeStats;
@@ -404,6 +415,31 @@ export function ChatPanel() {
       context: runtimeStats.context ?? configuredRuntimeStats.context,
     };
   }, [configuredRuntimeStats, runtimeStats]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadRun = async () => {
+      if (!visibleChatId) {
+        setActiveRun(null);
+        return;
+      }
+      try {
+        const response = await fetch(`/api/chat/runs?chatId=${encodeURIComponent(visibleChatId)}`, { cache: "no-store" });
+        if (!response.ok) throw new Error("Failed to load chat run status");
+        const data = (await response.json()) as { run?: ActiveChatRunStatus | null };
+        if (!cancelled) setActiveRun(data.run ?? null);
+      } catch {
+        if (!cancelled) setActiveRun(null);
+      }
+    };
+
+    void loadRun();
+    const interval = window.setInterval(loadRun, activeRun ? 1500 : 5000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [activeRun, syncTick, visibleChatId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -604,7 +640,10 @@ export function ChatPanel() {
     }
   }, [messages, status, applySwitchResult, refreshProjects, setMessages]);
 
-  const isLoading = status === "submitted" || status === "streaming";
+  const localIsLoading = status === "submitted" || status === "streaming";
+  const remoteIsLoading = Boolean(activeRun) && !localIsLoading;
+  const isLoading = localIsLoading || remoteIsLoading;
+  const loadingLabel = formatActiveRunLabel(activeRun);
 
   const onSubmit = useCallback(() => {
     if (!input.trim() || isLoading) return;
@@ -647,14 +686,16 @@ export function ChatPanel() {
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden">
-      <ChatMessages messages={messages} isLoading={isLoading} errorMessage={chatError} />
+      <ChatMessages messages={messages} isLoading={isLoading} errorMessage={chatError} loadingLabel={loadingLabel} />
       <ChatInput
         input={input}
         setInput={setInput}
         onSubmit={onSubmit}
         onStop={stop}
         isLoading={isLoading}
-        chatId={activeChatId || internalChatId}
+        canStop={localIsLoading}
+        disabled={remoteIsLoading}
+        chatId={visibleChatId}
         focusSignal={inputFocusSignal}
         runtimeStats={displayRuntimeStats}
       />
