@@ -20,6 +20,17 @@ import {
 } from "@/lib/storage/project-store";
 import { getPiAuthStorage, getPiModelRegistry, getPiSettingsManager } from "@/lib/pi/config-store";
 
+const EGGENT_CONTEXT_FILE_CANDIDATES = [
+  "AGENTS.md",
+  "AGENTS.MD",
+  "agents.md",
+  "Agents.md",
+  "CLAUDE.md",
+  "CLAUDE.MD",
+  "claude.md",
+  "Claude.md",
+];
+
 function normalizeProjectId(projectId?: string | null): string | undefined {
   const trimmed = projectId?.trim();
   return trimmed && trimmed !== "none" ? trimmed : undefined;
@@ -32,6 +43,53 @@ function resolveCwd(options: PiSessionOptions): string {
   const projectId = normalizeProjectId(options.projectId);
   const root = projectId ? getWorkDir(projectId) : getWorkDir(null);
   return rawCwd ? path.join(root, rawCwd) : root;
+}
+
+function loadContextFileFromDir(dir: string): { path: string; content: string } | null {
+  for (const filename of EGGENT_CONTEXT_FILE_CANDIDATES) {
+    const filePath = path.join(dir, filename);
+    try {
+      if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) continue;
+      return { path: filePath, content: fs.readFileSync(filePath, "utf-8") };
+    } catch {
+      // Ignore unreadable context files; Pi's resource loader does the same.
+    }
+  }
+  return null;
+}
+
+function loadEggentContextFiles(cwd: string, agentDir: string): Array<{ path: string; content: string }> {
+  const contextFiles: Array<{ path: string; content: string }> = [];
+  const seen = new Set<string>();
+  const add = (file: { path: string; content: string } | null) => {
+    if (!file) return;
+    const resolved = path.resolve(file.path);
+    if (seen.has(resolved)) return;
+    seen.add(resolved);
+    contextFiles.push({ ...file, path: resolved });
+  };
+
+  add(loadContextFileFromDir(agentDir));
+
+  const ancestors: Array<{ path: string; content: string }> = [];
+  const seenAncestors = new Set<string>();
+  let currentDir = path.resolve(cwd);
+  while (true) {
+    const file = loadContextFileFromDir(currentDir);
+    if (file) {
+      const resolved = path.resolve(file.path);
+      if (!seenAncestors.has(resolved)) {
+        seenAncestors.add(resolved);
+        ancestors.unshift({ ...file, path: resolved });
+      }
+    }
+    const parentDir = path.dirname(currentDir);
+    if (parentDir === currentDir) break;
+    currentDir = parentDir;
+  }
+
+  for (const file of ancestors) add(file);
+  return contextFiles;
 }
 
 function formatFileSize(bytes: number): string {
@@ -225,6 +283,7 @@ export async function createEggentPiSession(options: PiSessionOptions = {}) {
         }
       : undefined,
   });
+  const explicitContextFiles = loadEggentContextFiles(cwd, agentDir);
 
   const resourceLoader = new DefaultResourceLoader({
     cwd,
@@ -234,17 +293,25 @@ export async function createEggentPiSession(options: PiSessionOptions = {}) {
     noSkills: corePiToolsOnly,
     noPromptTemplates: corePiToolsOnly,
     noThemes: corePiToolsOnly,
-    agentsFilesOverride: (current) => ({
-      agentsFiles: [
+    agentsFilesOverride: (current) => {
+      const seen = new Set<string>();
+      const agentsFiles = [
         ...current.agentsFiles,
+        ...explicitContextFiles,
         {
           path: projectId
             ? path.join(getWorkDir(projectId), "context.md")
             : path.join(getWorkDir(null), "ORCHESTRATOR.md"),
           content: projectContext,
         },
-      ],
-    }),
+      ].filter((file) => {
+        const resolved = path.resolve(file.path);
+        if (seen.has(resolved)) return false;
+        seen.add(resolved);
+        return true;
+      });
+      return { agentsFiles };
+    },
   });
   await resourceLoader.reload();
 
