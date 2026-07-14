@@ -7,6 +7,8 @@ import {
   ModelRegistry,
   SettingsManager,
 } from "@earendil-works/pi-coding-agent";
+import type { PiRuntimeStats } from "@/lib/pi/types";
+import { getWorkDir, loadProjectModelSettings } from "@/lib/storage/project-store";
 
 export function getPiAuthStorage() {
   return AuthStorage.create();
@@ -104,6 +106,49 @@ export async function setPiDefaultToFirstAvailableModel(provider?: string, cwd =
   settingsManager.setDefaultModelAndProvider(selected.provider, selected.id);
   await settingsManager.flush();
   return getPiSettingsState(cwd);
+}
+
+export async function getResolvedPiRuntimeModel(projectId?: string | null): Promise<PiRuntimeStats> {
+  const normalizedProjectId = projectId?.trim() && projectId.trim() !== "none" ? projectId.trim() : undefined;
+  const cwd = normalizedProjectId ? getWorkDir(normalizedProjectId) : getWorkDir(null);
+  const authStorage = getPiAuthStorage();
+  const modelRegistry = getPiModelRegistry(authStorage);
+  const settingsManager = getPiSettingsManager(cwd);
+  await authStorage.reload();
+  await modelRegistry.refresh();
+
+  const availableModels = modelRegistry.getAvailable();
+  const findAvailableModel = (provider?: string, modelId?: string) => {
+    if (!provider || !modelId) return undefined;
+    return availableModels.find((model) => model.provider === provider && model.id === modelId);
+  };
+
+  const projectModelSettings = normalizedProjectId ? await loadProjectModelSettings(normalizedProjectId) : null;
+  const projectConfiguredModel = projectModelSettings && projectModelSettings.inheritsGlobal !== true
+    ? findAvailableModel(
+        typeof projectModelSettings.provider === "string" ? projectModelSettings.provider : undefined,
+        typeof projectModelSettings.model === "string" ? projectModelSettings.model : undefined
+      )
+    : undefined;
+  const globalConfiguredModel = findAvailableModel(settingsManager.getDefaultProvider(), settingsManager.getDefaultModel());
+  const configuredModel = projectConfiguredModel || globalConfiguredModel || availableModels[0];
+
+  return {
+    model: configuredModel
+      ? {
+          provider: configuredModel.provider,
+          id: configuredModel.id,
+          name: configuredModel.name,
+        }
+      : undefined,
+    context: configuredModel?.contextWindow
+      ? {
+          tokens: null,
+          contextWindow: configuredModel.contextWindow,
+          percent: null,
+        }
+      : undefined,
+  };
 }
 
 export async function getPiModelsState() {

@@ -318,6 +318,7 @@ export function ChatPanel() {
   const [input, setInput] = useState("");
   const [chatError, setChatError] = useState<string | null>(null);
   const [inputFocusSignal, setInputFocusSignal] = useState(0);
+  const [configuredRuntimeStats, setConfiguredRuntimeStats] = useState<PiRuntimeStats | null>(null);
 
   // Internal chatId that stays stable during a message send.
   // Pre-generate a UUID so useChat always has a consistent id.
@@ -325,7 +326,7 @@ export function ChatPanel() {
     () => activeChatId || generateClientId()
   );
   const syncTick = useBackgroundSync({
-    topics: ["chat", "global"],
+    topics: ["chat", "global", "projects"],
     projectId: activeProjectId ?? null,
     chatId: activeChatId ?? undefined,
   });
@@ -394,6 +395,36 @@ export function ChatPanel() {
   });
 
   const runtimeStats = useMemo(() => getLatestPiRuntimeStats(messages), [messages]);
+  const displayRuntimeStats = useMemo(() => {
+    if (!runtimeStats) return configuredRuntimeStats;
+    if (runtimeStats.model || !configuredRuntimeStats?.model) return runtimeStats;
+    return {
+      ...runtimeStats,
+      model: configuredRuntimeStats.model,
+      context: runtimeStats.context ?? configuredRuntimeStats.context,
+    };
+  }, [configuredRuntimeStats, runtimeStats]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const params = activeProjectId ? `?projectId=${encodeURIComponent(activeProjectId)}` : "";
+    fetch(`/api/pi-chat/model${params}`, { cache: "no-store" })
+      .then((response) => {
+        if (!response.ok) throw new Error("Failed to load pi model");
+        return response.json() as Promise<unknown>;
+      })
+      .then((data) => {
+        if (!cancelled && isPiRuntimeStats(data)) {
+          setConfiguredRuntimeStats(data);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setConfiguredRuntimeStats(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeProjectId, syncTick]);
 
   // Don't overwrite messages while a request is in flight (avoids "blink" on new chat)
   const statusRef = useRef(status);
@@ -625,7 +656,7 @@ export function ChatPanel() {
         isLoading={isLoading}
         chatId={activeChatId || internalChatId}
         focusSignal={inputFocusSignal}
-        runtimeStats={runtimeStats}
+        runtimeStats={displayRuntimeStats}
       />
     </div>
   );
