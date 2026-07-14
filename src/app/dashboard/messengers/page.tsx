@@ -1,5 +1,6 @@
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
+import { SettingsNavigation } from "@/components/settings-navigation";
 import { TelegramIntegrationManager } from "@/components/telegram-integration-manager";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 
@@ -12,6 +13,8 @@ export default function MessengersPage() {
           <AppSidebar />
           <SidebarInset>
             <div className="flex flex-1 flex-col gap-6 p-4 md:p-6 max-w-5xl mx-auto w-full">
+              <SettingsNavigation />
+
               <div className="space-y-2">
                 <h2 className="text-2xl font-semibold">Messenger Integrations</h2>
                 <p className="text-sm text-muted-foreground">

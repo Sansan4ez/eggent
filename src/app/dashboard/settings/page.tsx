@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
+import { SettingsNavigation } from "@/components/settings-navigation";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -430,6 +431,8 @@ export default function SettingsPage() {
           <AppSidebar />
           <SidebarInset>
             <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-6 overflow-y-auto p-4 md:p-6">
+              <SettingsNavigation />
+
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-2xl font-semibold">Settings</h2>

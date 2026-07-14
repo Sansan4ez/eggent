@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
+import { SettingsNavigation } from "@/components/settings-navigation";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 
@@ -24,6 +25,8 @@ export function ProjectPageShell({ projectId, title, description, children }: Pr
           <AppSidebar />
           <SidebarInset>
             <div className="mx-auto flex w-full max-w-5xl flex-1 flex-col gap-5 p-4 md:p-6">
+              <SettingsNavigation />
+
               <div className="space-y-2">
                 <Button variant="ghost" size="sm" asChild className="-ml-2 gap-2">
                   <Link href={`/dashboard/projects/${projectId}`}>

@@ -6,6 +6,7 @@ import { useParams } from "next/navigation";
 import { ArrowLeft, FileText, Loader2, RefreshCw } from "lucide-react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
+import { SettingsNavigation } from "@/components/settings-navigation";
 import { Button } from "@/components/ui/button";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { useBackgroundSync } from "@/hooks/use-background-sync";
@@ -82,6 +83,8 @@ export default function PipelineRunPage() {
           <AppSidebar />
           <SidebarInset>
             <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-5 p-4 md:p-6">
+              <SettingsNavigation />
+
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <Link href="/dashboard/pipelines" className="mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">

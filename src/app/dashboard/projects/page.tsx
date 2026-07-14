@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
+import { SettingsNavigation } from "@/components/settings-navigation";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -402,6 +403,8 @@ function ProjectsPageClient() {
           <AppSidebar />
           <SidebarInset>
             <div className="flex flex-1 flex-col gap-4 p-4 md:p-6 max-w-5xl mx-auto w-full">
+              <SettingsNavigation />
+
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-2xl font-semibold">Projects</h2>

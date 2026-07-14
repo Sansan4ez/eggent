@@ -5,16 +5,12 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
 import {
-  Cable,
   Bot,
-  CalendarClock,
   FolderOpen,
-  GitBranch,
   LifeBuoy,
   LogOut,
   MessageSquarePlus,
   MessagesSquare,
-  Send,
   Settings,
   Trash2,
 } from "lucide-react";
@@ -291,50 +287,20 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
       <SidebarFooter>
         <SidebarGroup>
-          <SidebarGroupLabel>Navigation</SidebarGroupLabel>
           <SidebarMenu>
             <SidebarMenuItem>
-              <SidebarMenuButton asChild>
-                <Link href="/dashboard/projects">
-                  <FolderOpen className="size-4" />
-                  <span>Projects</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild>
-                <Link href="/dashboard/pipelines">
-                  <GitBranch className="size-4" />
-                  <span>Pipelines</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild>
-                <Link href="/dashboard/schedules">
-                  <CalendarClock className="size-4" />
-                  <span>Schedules</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild>
-                <Link href="/dashboard/messengers">
-                  <Send className="size-4" />
-                  <span>Messengers</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild>
-                <Link href="/dashboard/api">
-                  <Cable className="size-4" />
-                  <span>API</span>
-                </Link>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-            <SidebarMenuItem>
-              <SidebarMenuButton asChild>
+              <SidebarMenuButton
+                asChild
+                isActive={
+                  pathname.startsWith("/dashboard/settings") ||
+                  pathname.startsWith("/dashboard/projects") ||
+                  pathname.startsWith("/dashboard/pipelines") ||
+                  pathname.startsWith("/dashboard/pipeline-runs") ||
+                  pathname.startsWith("/dashboard/schedules") ||
+                  pathname.startsWith("/dashboard/messengers") ||
+                  pathname.startsWith("/dashboard/api")
+                }
+              >
                 <Link href="/dashboard/settings">
                   <Settings className="size-4" />
                   <span>Settings</span>

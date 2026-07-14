@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { GitBranch, Loader2, Play, Save, Trash2 } from "lucide-react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
+import { SettingsNavigation } from "@/components/settings-navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
@@ -210,6 +211,8 @@ export default function PipelinesPage() {
           <AppSidebar />
           <SidebarInset>
             <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-5 p-4 md:p-6">
+              <SettingsNavigation />
+
               <div className="space-y-1">
                 <h2 className="flex items-center gap-2 text-2xl font-semibold">
                   <GitBranch className="size-6" /> Agent Pipelines

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
+import { SettingsNavigation } from "@/components/settings-navigation";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import {
@@ -117,6 +118,8 @@ export default function ProjectDetailsPage() {
           <AppSidebar />
           <SidebarInset>
             <div className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 p-4 md:p-8">
+              <SettingsNavigation />
+
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <div className="mb-2 flex items-center gap-2">
