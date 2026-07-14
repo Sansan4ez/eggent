@@ -386,7 +386,7 @@ export async function runPiAgentText(options: PiChatRunOptions & { runtimeData?:
   try {
     applySchedulingToolPolicy(session, prompt);
     await session.prompt(withSchedulingDirective(prompt));
-    lastTurnUsage = subtractUsage(getSessionTokenUsage(session), baselineUsage) ?? lastTurnUsage;
+    lastTurnUsage = lastTurnUsage ?? subtractUsage(getSessionTokenUsage(session), baselineUsage);
     await persistAssistantMessage({
       chatId: options.chatId,
       assistantText,
@@ -528,7 +528,7 @@ export function createPiChatUIMessageStream(options: PiChatRunOptions) {
       try {
         applySchedulingToolPolicy(session, options.userMessage);
         await session.prompt(withSchedulingDirective(options.userMessage));
-        lastTurnUsage = subtractUsage(getSessionTokenUsage(session), baselineUsage) ?? lastTurnUsage;
+        lastTurnUsage = lastTurnUsage ?? subtractUsage(getSessionTokenUsage(session), baselineUsage);
         const finalStats = buildPiRuntimeStats(session, lastTurnUsage);
         emitStats(finalStats);
         if (textStarted) {
