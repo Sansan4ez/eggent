@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_URL="${EGGENT_REPO_URL:-https://github.com/eggent-ai/eggent.git}"
+REPO_URL="${EGGENT_REPO_URL:-https://github.com/eggent-ai/eggentpi.git}"
 BRANCH="${EGGENT_BRANCH:-main}"
 INSTALL_DIR="${EGGENT_INSTALL_DIR:-$HOME/.eggent}"
 AUTO_INSTALL_DOCKER="${EGGENT_AUTO_INSTALL_DOCKER:-1}"
@@ -200,14 +200,9 @@ main() {
   ensure_repo
 
   local docker_bin
-  local default_bind_host app_bind_host app_port
+  local app_bind_host app_port
   app_port="${APP_PORT:-3000}"
-  default_bind_host="127.0.0.1"
-  if [[ "$(uname -s)" == "Linux" ]]; then
-    # One-command installs are often used on VPS hosts where the app should be reachable remotely.
-    default_bind_host="0.0.0.0"
-  fi
-  app_bind_host="${EGGENT_APP_BIND_HOST:-$default_bind_host}"
+  app_bind_host="${EGGENT_APP_BIND_HOST:-127.0.0.1}"
 
   docker_bin="$(pick_docker_bin)"
 

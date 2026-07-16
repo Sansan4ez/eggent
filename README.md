@@ -58,6 +58,39 @@ The user-facing product is Eggent. Internally, Eggent uses an agent runtime and 
 - npm
 - Git
 
+### One-command Docker install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/eggent-ai/eggentpi/main/scripts/install.sh | bash
+```
+
+This clones/updates Eggent in `~/.eggent`, installs Docker if possible, builds the image, starts the container, and waits for `/api/health`.
+
+Safe default:
+
+```text
+http://127.0.0.1:3000
+```
+
+For a VPS that should be reachable directly from the network, opt in explicitly:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/eggent-ai/eggentpi/main/scripts/install.sh \
+  | EGGENT_APP_BIND_HOST=0.0.0.0 bash
+```
+
+You can also override install location, branch, repo, and port:
+
+```bash
+EGGENT_INSTALL_DIR=/opt/eggent \
+EGGENT_BRANCH=main \
+APP_PORT=3000 \
+EGGENT_APP_BIND_HOST=127.0.0.1 \
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/eggent-ai/eggentpi/main/scripts/install.sh)"
+```
+
+If the repository is private, use an authenticated GitHub session/token or clone manually and run `npm run setup:docker`.
+
 ### Local development
 
 ```bash
