@@ -5,9 +5,13 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { SettingsNavigation } from "@/components/settings-navigation";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { Check, ExternalLink, KeyRound, Loader2, LogOut, Moon, PlugZap, Save, ShieldCheck, Sun } from "lucide-react";
 import { updateSettingsByPath } from "@/lib/settings/update-settings-path";
 import type { AppSettings } from "@/lib/types";
@@ -452,7 +456,11 @@ export default function SettingsPage() {
                 <p className="text-sm text-muted-foreground">
                   Configure provider logins, API keys, model defaults, and custom model providers for Eggent.
                 </p>
-                {piError ? <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{piError}</div> : null}
+                {piError ? (
+                  <Alert variant="destructive">
+                    <AlertDescription>{piError}</AlertDescription>
+                  </Alert>
+                ) : null}
 
                 {piLoading ? <div className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Loading providers...</div> : null}
 
@@ -484,17 +492,22 @@ export default function SettingsPage() {
                     <h4 className="font-medium">Choose provider</h4>
                     <p className="text-xs text-muted-foreground">Pick one provider first. Eggent will only show models for that provider.</p>
                   </div>
-                  <select
+                  <Select
                     value={defaultProviderSelection}
-                    onChange={(event) => handleDefaultProviderChange(event.target.value)}
-                    className="w-full rounded-md border bg-background px-3 py-2 text-sm"
+                    onValueChange={handleDefaultProviderChange}
                     disabled={piLoading || providerChoices.length === 0}
                   >
-                    <option value="">Select provider...</option>
-                    {providerChoices.map((item) => (
-                      <option key={item.id} value={item.id}>{item.name}</option>
-                    ))}
-                  </select>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Select provider..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        {providerChoices.map((item) => (
+                          <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
+                        ))}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {defaultProviderSelection ? (
@@ -525,7 +538,7 @@ export default function SettingsPage() {
                             {selectedProviderHasStoredCredential ? "Replace key" : "Save key"}
                           </Button>
                         </div>
-                        <textarea value={apiKeyEnv} onChange={(event) => setApiKeyEnv(event.target.value)} rows={4} className="w-full rounded-lg border bg-muted/30 p-3 text-xs font-mono" placeholder={'Optional provider-scoped env JSON, e.g. {"CLOUDFLARE_ACCOUNT_ID":"..."}'} />
+                        <Textarea value={apiKeyEnv} onChange={(event) => setApiKeyEnv(event.target.value)} rows={4} className="font-mono text-xs" placeholder={'Optional provider-scoped env JSON, e.g. {"CLOUDFLARE_ACCOUNT_ID":"..."}'} />
                       </div>
                     ) : null}
 
@@ -562,16 +575,30 @@ export default function SettingsPage() {
                       <p className="text-xs text-muted-foreground">Only models currently available for this provider are shown.</p>
                     </div>
                     <div className="grid gap-3 md:grid-cols-[1fr_160px_auto]">
-                      <select value={defaultModelSelection} onChange={(event) => setDefaultModelSelection(event.target.value)} className="rounded-md border bg-background px-3 py-2 text-sm">
-                        {modelChoices.map((model) => (
-                          <option key={`${model.provider}/${model.id}`} value={model.id}>
-                            {model.id}{model.name && model.name !== model.id ? ` · ${model.name}` : ""}
-                          </option>
-                        ))}
-                      </select>
-                      <select value={defaultThinkingLevel} onChange={(event) => setDefaultThinkingLevel(event.target.value)} className="rounded-md border bg-background px-3 py-2 text-sm">
-                        {thinkingLevels.map((level) => <option key={level} value={level}>{level}</option>)}
-                      </select>
+                      <Select value={defaultModelSelection} onValueChange={setDefaultModelSelection}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Select model" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            {modelChoices.map((model) => (
+                              <SelectItem key={`${model.provider}/${model.id}`} value={model.id}>
+                                {model.id}{model.name && model.name !== model.id ? ` · ${model.name}` : ""}
+                              </SelectItem>
+                            ))}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
+                      <Select value={defaultThinkingLevel} onValueChange={setDefaultThinkingLevel}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue placeholder="Thinking" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectGroup>
+                            {thinkingLevels.map((level) => <SelectItem key={level} value={level}>{level}</SelectItem>)}
+                          </SelectGroup>
+                        </SelectContent>
+                      </Select>
                       <Button onClick={saveDefaultModel} disabled={savingDefaultModel || !defaultModelSelection} className="gap-2">
                         {savingDefaultModel ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
                         Save model
@@ -599,7 +626,7 @@ export default function SettingsPage() {
                           Save models.json
                         </Button>
                       </div>
-                      <textarea value={modelsJson} onChange={(event) => setModelsJson(event.target.value)} rows={14} className="w-full rounded-lg border bg-muted/30 p-3 text-xs font-mono" />
+                      <Textarea value={modelsJson} onChange={(event) => setModelsJson(event.target.value)} rows={14} className="min-h-80 font-mono text-xs" />
                     </div>
                   </details>
                 ) : null}
@@ -624,8 +651,12 @@ export default function SettingsPage() {
                   <div className="space-y-2"><Label htmlFor="auth-password">New password</Label><Input id="auth-password" type="password" value={authPassword} onChange={(event) => setAuthPassword(event.target.value)} /></div>
                   <div className="space-y-2"><Label htmlFor="auth-password-confirm">Confirm password</Label><Input id="auth-password-confirm" type="password" value={authPasswordConfirm} onChange={(event) => setAuthPasswordConfirm(event.target.value)} /></div>
                 </div>
-                {authError ? <p className="text-sm text-destructive">{authError}</p> : null}
-                {authSaved ? <p className="text-sm text-emerald-600">Credentials updated.</p> : null}
+                {authError ? (
+                  <Alert variant="destructive">
+                    <AlertDescription>{authError}</AlertDescription>
+                  </Alert>
+                ) : null}
+                {authSaved ? <Badge variant="secondary">Credentials updated</Badge> : null}
                 <Button onClick={handleUpdateAuth} disabled={authSaving} className="gap-2">
                   {authSaving ? <Loader2 className="size-4 animate-spin" /> : <ShieldCheck className="size-4" />}
                   Update credentials

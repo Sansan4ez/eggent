@@ -5,9 +5,13 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { SettingsNavigation } from "@/components/settings-navigation";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { TelegramIntegrationManager } from "@/components/telegram-integration-manager";
 import {
   Check,
@@ -496,12 +500,12 @@ function ProjectsPageClient() {
                         />
                       </div>
 
-                      {credentialsError && (
-                        <p className="text-sm text-destructive">{credentialsError}</p>
-                      )}
-                      {credentialsStatus && (
-                        <p className="text-sm text-emerald-600">{credentialsStatus}</p>
-                      )}
+                      {credentialsError ? (
+                        <Alert variant="destructive">
+                          <AlertDescription>{credentialsError}</AlertDescription>
+                        </Alert>
+                      ) : null}
+                      {credentialsStatus ? <Badge variant="secondary">{credentialsStatus}</Badge> : null}
 
                       <div className="flex items-center gap-2">
                         <Button
@@ -550,18 +554,20 @@ function ProjectsPageClient() {
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="instructions">Instructions for AI Agent</Label>
-                    <textarea
+                    <Textarea
                       id="instructions"
                       value={newInstructions}
                       onChange={(e) => setNewInstructions(e.target.value)}
                       placeholder="Special instructions for the AI when working on this project..."
-                      className="w-full rounded-md border bg-background px-3 py-2 text-sm min-h-[80px] resize-y focus:outline-none focus:ring-2 focus:ring-ring"
+                      className="min-h-24"
                     />
                   </div>
 
-                  {createError && (
-                    <p className="text-sm text-destructive">{createError}</p>
-                  )}
+                  {createError ? (
+                    <Alert variant="destructive">
+                      <AlertDescription>{createError}</AlertDescription>
+                    </Alert>
+                  ) : null}
 
                   <div className="flex items-center gap-2">
                     <Button
@@ -589,10 +595,13 @@ function ProjectsPageClient() {
 
               <div className="space-y-3">
                 {!projectsLoading && projects.length === 0 && (
-                  <div className="text-center py-12 text-muted-foreground">
-                    <FolderOpen className="size-12 mx-auto mb-4 opacity-50" />
-                    <p>No projects yet. You can work in Orchestrator or create a project when needed.</p>
-                  </div>
+                  <Empty className="border">
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon"><FolderOpen /></EmptyMedia>
+                      <EmptyTitle>No projects yet</EmptyTitle>
+                      <EmptyDescription>You can work in Orchestrator or create a dedicated project when needed.</EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
                 )}
 
                 {projects.map((project) => (
@@ -612,11 +621,12 @@ function ProjectsPageClient() {
                             {project.description}
                           </p>
                         )}
-                        <div className="flex items-center gap-4 text-xs text-muted-foreground mt-2">
-                          <span className="font-mono">context.md · memory.md · skills/ · .mcp.json · model.json</span>
+                        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          {["context.md", "memory.md", "skills/", ".mcp.json", "model.json"].map((file) => (
+                            <Badge key={file} variant="outline" className="font-mono">{file}</Badge>
+                          ))}
                           <span>
-                            Created:{" "}
-                            {new Date(project.createdAt).toLocaleDateString()}
+                            Created: {new Date(project.createdAt).toLocaleDateString()}
                           </span>
                         </div>
                       </div>

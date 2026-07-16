@@ -10,6 +10,7 @@ import {
   Send,
   Settings,
 } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 const SETTINGS_SECTIONS = [
   { href: "/dashboard/settings", label: "General", icon: Settings },
@@ -24,7 +25,7 @@ export function SettingsNavigation() {
   const pathname = usePathname();
 
   return (
-    <nav aria-label="Settings sections" className="rounded-xl border bg-card p-1.5 shadow-sm">
+    <nav aria-label="Settings sections" className="rounded-xl border bg-card/80 p-1.5 shadow-sm backdrop-blur">
       <div className="flex items-center gap-1 overflow-x-auto">
         {SETTINGS_SECTIONS.map(({ href, label, icon: Icon }) => {
           const active =
@@ -36,11 +37,12 @@ export function SettingsNavigation() {
               key={href}
               href={href}
               aria-current={active ? "page" : undefined}
-              className={`inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors ${
+              className={cn(
+                "inline-flex shrink-0 items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                 active
                   ? "bg-primary text-primary-foreground shadow-sm"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground"
-              }`}
+              )}
             >
               <Icon className="size-4" />
               <span>{label}</span>

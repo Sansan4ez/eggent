@@ -6,7 +6,9 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { SettingsNavigation } from "@/components/settings-navigation";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 
 type PiSchedule = {
   id: string;
@@ -36,11 +38,11 @@ function formatDate(value?: string) {
   }
 }
 
-function statusClass(job: PiSchedule) {
-  if (!job.enabled) return "bg-muted text-muted-foreground";
-  if (job.lastStatus === "error") return "bg-destructive/10 text-destructive";
-  if (job.lastStatus === "running") return "bg-blue-500/10 text-blue-700 dark:text-blue-300";
-  return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300";
+function statusVariant(job: PiSchedule): "default" | "secondary" | "destructive" | "outline" {
+  if (!job.enabled) return "outline";
+  if (job.lastStatus === "error") return "destructive";
+  if (job.lastStatus === "running") return "default";
+  return "secondary";
 }
 
 export default function PiSchedulesPage() {
@@ -112,13 +114,15 @@ export default function PiSchedulesPage() {
                     Loading schedules...
                   </div>
                 ) : schedules.length === 0 ? (
-                  <div className="p-8 text-center text-sm text-muted-foreground">
-                    <CalendarClock className="mx-auto mb-3 size-8 opacity-70" />
-                    <p className="font-medium text-foreground">No scheduled tasks found</p>
-                    <p className="mt-1">
-                      Schedules will appear here after they are created from an Eggent chat/session.
-                    </p>
-                  </div>
+                  <Empty>
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon"><CalendarClock /></EmptyMedia>
+                      <EmptyTitle>No scheduled tasks found</EmptyTitle>
+                      <EmptyDescription>
+                        Schedules will appear here after they are created from an Eggent chat/session.
+                      </EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
@@ -158,9 +162,9 @@ export default function PiSchedulesPage() {
                               <div className="text-xs text-muted-foreground">Runs: {job.runCount ?? 0}</div>
                             </td>
                             <td className="px-4 py-3 align-top">
-                              <span className={`rounded-full px-2 py-1 text-xs ${statusClass(job)}`}>
+                              <Badge variant={statusVariant(job)}>
                                 {job.enabled ? job.lastStatus || "scheduled" : "disabled"}
-                              </span>
+                              </Badge>
                             </td>
                           </tr>
                         ))}

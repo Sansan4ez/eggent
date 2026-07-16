@@ -9,10 +9,10 @@ export function SiteHeader({ title }: { title?: string }) {
   const { toggleSidebar } = useSidebar()
 
   return (
-    <header className="bg-background sticky top-0 z-50 flex w-full items-center border-b">
+    <header className="sticky top-0 z-50 flex w-full items-center border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80">
       <div className="flex h-(--header-height) w-full items-center gap-2 px-4">
         <Button
-          className="h-8 w-8"
+          className="size-8"
           variant="ghost"
           size="icon"
           onClick={toggleSidebar}
@@ -20,7 +20,7 @@ export function SiteHeader({ title }: { title?: string }) {
           <SidebarIcon />
         </Button>
         <Separator orientation="vertical" className="mr-2 h-4" />
-        <h1 className="text-sm font-medium">
+        <h1 className="text-sm font-medium tracking-tight">
           {title || "Eggent"}
         </h1>
       </div>

@@ -7,6 +7,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { SettingsNavigation } from "@/components/settings-navigation";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   ArrowLeft,
@@ -127,9 +128,7 @@ export default function ProjectDetailsPage() {
                       <ArrowLeft className="size-4" />
                     </Button>
                     <h1 className="text-2xl font-semibold tracking-tight">{project.name}</h1>
-                    <span className="rounded-full bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
-                      directory-backed agent
-                    </span>
+                    <Badge variant="secondary">directory-backed agent</Badge>
                   </div>
                   <p className="text-muted-foreground">{project.description || "No description provided."}</p>
                   <p className="mt-2 max-w-3xl text-sm text-muted-foreground">
@@ -170,9 +169,9 @@ export default function ProjectDetailsPage() {
                             <Icon className="size-4 text-primary" />
                             <span className="font-medium">{item.title}</span>
                           </div>
-                          <span className="rounded bg-muted px-2 py-1 font-mono text-[11px] text-muted-foreground group-hover:text-foreground">
+                          <Badge variant="outline" className="font-mono text-[11px]">
                             {item.name}
-                          </span>
+                          </Badge>
                         </div>
                         <p className="text-sm text-muted-foreground">{item.description}</p>
                       </Link>

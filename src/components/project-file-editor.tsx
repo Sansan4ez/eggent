@@ -2,7 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { Loader2, Save } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 
 interface ProjectFileEditorProps {
   projectId: string;
@@ -93,20 +96,24 @@ export function ProjectFileEditor({
         </Button>
       </div>
 
-      {status ? <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-2 text-sm text-emerald-700 dark:text-emerald-300">{status}</div> : null}
-      {error ? <div className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</div> : null}
+      {status ? <Badge variant="secondary">{status}</Badge> : null}
+      {error ? (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      ) : null}
 
       {loading ? (
         <div className="flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="size-4 animate-spin" /> Loading {filename}...
         </div>
       ) : (
-        <textarea
+        <Textarea
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           rows={rows}
           disabled={saving}
-          className="w-full rounded-lg border bg-muted/30 p-3 text-sm font-mono whitespace-pre-wrap focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-70"
+          className="min-h-[420px] font-mono text-sm"
         />
       )}
     </section>

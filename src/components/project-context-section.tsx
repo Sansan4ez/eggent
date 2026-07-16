@@ -2,7 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { BookText, Loader2, Puzzle, Wrench } from "lucide-react";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Sheet,
   SheetContent,
@@ -167,24 +171,22 @@ export function ProjectContextSection({ projectId }: ProjectContextSectionProps)
                   No `.mcp.json` found for this project. Save to create it.
                 </p>
               )}
-              {mcpStatus && (
-                <div
-                  className={`rounded-md border px-3 py-2 text-xs ${
-                    mcpStatusTone === "error"
-                      ? "border-destructive/40 bg-destructive/10 text-destructive"
-                      : "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                  }`}
-                >
-                  {mcpStatus}
-                </div>
-              )}
-              <textarea
+              {mcpStatus ? (
+                mcpStatusTone === "error" ? (
+                  <Alert variant="destructive">
+                    <AlertDescription>{mcpStatus}</AlertDescription>
+                  </Alert>
+                ) : (
+                  <Badge variant="secondary">{mcpStatus}</Badge>
+                )
+              ) : null}
+              <Textarea
                 value={mcpDraft}
                 onChange={(e) => setMcpDraft(e.target.value)}
                 placeholder='{"mcpServers": {}}'
                 rows={10}
                 disabled={mcpSaving}
-                className="w-full rounded-lg border bg-muted/30 p-3 text-xs font-mono whitespace-pre-wrap focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-70"
+                className="min-h-64 font-mono text-xs"
               />
               <div className="flex items-center gap-2">
                 <Button
@@ -234,9 +236,13 @@ export function ProjectContextSection({ projectId }: ProjectContextSectionProps)
               Loading skills...
             </div>
           ) : skills.length === 0 ? (
-            <div className="p-4 text-sm text-muted-foreground">
-              No skills configured for this project yet.
-            </div>
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon"><Puzzle /></EmptyMedia>
+                <EmptyTitle>No skills configured</EmptyTitle>
+                <EmptyDescription>Project skills will appear here after installation.</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           ) : (
             <div className="divide-y">
               {skills.map((skill) => (

@@ -4,8 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, PackagePlus, Puzzle, BookText } from "lucide-react";
 import { useAppStore } from "@/store/app-store";
 import {
@@ -248,25 +252,24 @@ export default function SkillsPage() {
               </div>
 
               <div className="flex flex-col md:flex-row gap-3">
-                <select
+                <Select
                   value={selectedProjectId}
-                  onChange={(e) => setSelectedProjectId(e.target.value)}
-                  className="rounded-md border bg-background px-3 py-2 text-sm md:w-96"
+                  onValueChange={setSelectedProjectId}
                   disabled={projectsLoading || projects.length === 0}
                 >
-                  {projectsLoading && (
-                    <option value="">Loading projects...</option>
-                  )}
-                  {!projectsLoading && projects.length === 0 && (
-                    <option value="">No projects available</option>
-                  )}
-                  {!projectsLoading &&
-                    projects.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.name} ({project.id})
-                      </option>
-                    ))}
-                </select>
+                  <SelectTrigger className="md:w-96">
+                    <SelectValue placeholder={projectsLoading ? "Loading projects..." : "Select project"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {projects.map((project) => (
+                        <SelectItem key={project.id} value={project.id}>
+                          {project.name} ({project.id})
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
 
                 <Input
                   value={search}
@@ -276,11 +279,11 @@ export default function SkillsPage() {
                 />
               </div>
 
-              {statusMessage && (
-                <div className="rounded-md border bg-muted/40 px-3 py-2 text-sm">
-                  {statusMessage}
-                </div>
-              )}
+              {statusMessage ? (
+                <Alert>
+                  <AlertDescription>{statusMessage}</AlertDescription>
+                </Alert>
+              ) : null}
 
               <div className="rounded-lg border bg-card">
                 <div className="flex items-center justify-between border-b px-4 py-3">
@@ -300,13 +303,21 @@ export default function SkillsPage() {
                     Loading installed skills...
                   </div>
                 ) : !selectedProjectId ? (
-                  <div className="p-4 text-sm text-muted-foreground">
-                    Select a project to view installed skills.
-                  </div>
+                  <Empty>
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon"><BookText /></EmptyMedia>
+                      <EmptyTitle>Select a project</EmptyTitle>
+                      <EmptyDescription>Choose a project to view installed skills.</EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
                 ) : filteredInstalledSkills.length === 0 ? (
-                  <div className="p-4 text-sm text-muted-foreground">
-                    No installed skills found for this project.
-                  </div>
+                  <Empty>
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon"><BookText /></EmptyMedia>
+                      <EmptyTitle>No installed skills</EmptyTitle>
+                      <EmptyDescription>Installed project skills will appear here.</EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
                 ) : (
                   <div className="divide-y">
                     {filteredInstalledSkills.map((skill) => (
@@ -326,14 +337,10 @@ export default function SkillsPage() {
                           </p>
                           <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
                             {skill.license ? (
-                              <span className="rounded border px-2 py-0.5">
-                                License: {skill.license}
-                              </span>
+                              <Badge variant="outline">License: {skill.license}</Badge>
                             ) : null}
                             {skill.compatibility ? (
-                              <span className="rounded border px-2 py-0.5">
-                                Compatibility: {skill.compatibility}
-                              </span>
+                              <Badge variant="outline">Compatibility: {skill.compatibility}</Badge>
                             ) : null}
                           </div>
                         </div>
@@ -357,9 +364,13 @@ export default function SkillsPage() {
                   Loading bundled skills...
                 </div>
               ) : filteredBundledSkills.length === 0 ? (
-                <div className="py-14 text-center text-muted-foreground">
-                  No bundled skills found.
-                </div>
+                <Empty className="border">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon"><Puzzle /></EmptyMedia>
+                    <EmptyTitle>No bundled skills found</EmptyTitle>
+                    <EmptyDescription>Try a different search or select another project.</EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
               ) : (
                 <div className="grid gap-3">
                   {filteredBundledSkills.map((skill) => (
@@ -377,14 +388,10 @@ export default function SkillsPage() {
                         </p>
                         <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
                           {skill.license ? (
-                            <span className="rounded border px-2 py-0.5">
-                              License: {skill.license}
-                            </span>
+                            <Badge variant="outline">License: {skill.license}</Badge>
                           ) : null}
                           {skill.compatibility ? (
-                            <span className="rounded border px-2 py-0.5">
-                              Compatibility: {skill.compatibility}
-                            </span>
+                            <Badge variant="outline">Compatibility: {skill.compatibility}</Badge>
                           ) : null}
                         </div>
                       </div>

@@ -4,8 +4,13 @@ import { useEffect, useMemo, useState } from "react";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import { Globe, Loader2, Terminal, Wrench } from "lucide-react";
 import { useAppStore } from "@/store/app-store";
 
@@ -257,25 +262,24 @@ export default function McpPage() {
               </div>
 
               <div className="flex flex-col md:flex-row gap-3">
-                <select
+                <Select
                   value={selectedProjectId}
-                  onChange={(e) => setSelectedProjectId(e.target.value)}
-                  className="rounded-md border bg-background px-3 py-2 text-sm md:w-96"
+                  onValueChange={setSelectedProjectId}
                   disabled={projectsLoading || projects.length === 0}
                 >
-                  {projectsLoading && (
-                    <option value="">Loading projects...</option>
-                  )}
-                  {!projectsLoading && projects.length === 0 && (
-                    <option value="">No projects available</option>
-                  )}
-                  {!projectsLoading &&
-                    projects.map((project) => (
-                      <option key={project.id} value={project.id}>
-                        {project.name} ({project.id})
-                      </option>
-                    ))}
-                </select>
+                  <SelectTrigger className="md:w-96">
+                    <SelectValue placeholder={projectsLoading ? "Loading projects..." : "Select project"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      {projects.map((project) => (
+                        <SelectItem key={project.id} value={project.id}>
+                          {project.name} ({project.id})
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
 
                 <Input
                   value={search}
@@ -285,19 +289,11 @@ export default function McpPage() {
                 />
               </div>
 
-              {statusMessage && (
-                <div
-                  className={`rounded-md border px-3 py-2 text-sm ${
-                    statusTone === "error"
-                      ? "border-destructive/40 bg-destructive/10 text-destructive"
-                      : statusTone === "success"
-                        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300"
-                        : "bg-muted/40"
-                  }`}
-                >
-                  {statusMessage}
-                </div>
-              )}
+              {statusMessage ? (
+                <Alert variant={statusTone === "error" ? "destructive" : "default"}>
+                  <AlertDescription>{statusMessage}</AlertDescription>
+                </Alert>
+              ) : null}
 
               <div className="rounded-lg border bg-card">
                 <div className="flex items-center justify-between border-b px-4 py-3">
@@ -318,13 +314,21 @@ export default function McpPage() {
                     Loading MCP servers...
                   </div>
                 ) : !selectedProjectId ? (
-                  <div className="p-4 text-sm text-muted-foreground">
-                    Select a project to view MCP servers.
-                  </div>
+                  <Empty>
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon"><Wrench /></EmptyMedia>
+                      <EmptyTitle>Select a project</EmptyTitle>
+                      <EmptyDescription>Choose a project to view MCP servers.</EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
                 ) : filteredServers.length === 0 ? (
-                  <div className="p-4 text-sm text-muted-foreground">
-                    No MCP servers found for this project.
-                  </div>
+                  <Empty>
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon"><Wrench /></EmptyMedia>
+                      <EmptyTitle>No MCP servers</EmptyTitle>
+                      <EmptyDescription>Servers configured in .mcp.json will appear here.</EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
                 ) : (
                   <div className="divide-y">
                     {filteredServers.map((server) => (
@@ -338,9 +342,7 @@ export default function McpPage() {
                             )}
                             <p className="font-medium truncate">{server.id}</p>
                           </div>
-                          <span className="rounded border px-2 py-0.5 text-xs text-muted-foreground shrink-0">
-                            {server.transport}
-                          </span>
+                          <Badge variant="outline" className="shrink-0">{server.transport}</Badge>
                         </div>
 
                         {server.transport === "stdio" ? (
@@ -408,13 +410,13 @@ export default function McpPage() {
                         `.mcp.json` does not exist yet for this project. Save to create it.
                       </p>
                     )}
-                    <textarea
+                    <Textarea
                       value={draftContent}
                       onChange={(e) => setDraftContent(e.target.value)}
                       placeholder='{"mcpServers": {}}'
                       rows={10}
                       disabled={loading || saving}
-                      className="w-full rounded-lg border bg-muted/30 p-3 text-xs font-mono whitespace-pre-wrap focus:outline-none focus:ring-2 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-70"
+                      className="min-h-64 font-mono text-xs"
                     />
                     <div className="flex items-center gap-2">
                       <Button

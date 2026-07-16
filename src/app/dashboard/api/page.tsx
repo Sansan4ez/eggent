@@ -3,6 +3,8 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { ExternalApiTokenManager } from "@/components/external-api-token-manager";
 import { SiteHeader } from "@/components/site-header";
 import { SettingsNavigation } from "@/components/settings-navigation";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 
 function CodeBlock({ code }: { code: string }) {
@@ -21,10 +23,14 @@ function InfoCard({
   children: ReactNode;
 }) {
   return (
-    <section className="rounded-lg border bg-card p-4 space-y-3">
-      <h3 className="text-lg font-medium">{title}</h3>
-      {children}
-    </section>
+    <Card>
+      <CardHeader>
+        <CardTitle>{title}</CardTitle>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-3">
+        {children}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -54,9 +60,7 @@ export default function ApiPage() {
 
               <InfoCard title="2. Connect to the endpoint">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="rounded border bg-muted px-2 py-0.5 text-xs font-medium">
-                    POST
-                  </span>
+                  <Badge variant="outline">POST</Badge>
                   <span className="font-mono text-sm">/api/external/message</span>
                 </div>
                 <div className="space-y-1 text-sm text-muted-foreground">
