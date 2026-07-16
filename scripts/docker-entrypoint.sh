@@ -24,7 +24,7 @@ fix_auth_file() {
 }
 
 # Bind-mounted ./data is often created as root on VPS hosts. The container runs
-# as node (uid 1000), so fix ownership before creating pi-agent/cache dirs.
+# as node (uid 1000), so fix ownership before creating settings/pi-agent/cache dirs.
 DATA_ROOT="/app/data"
 PI_AGENT_DIR="${PI_CODING_AGENT_DIR:-/app/data/pi-agent}"
 RUNTIME_DIRS=(
@@ -38,7 +38,11 @@ RUNTIME_DIRS=(
 # Do not hide failures here: continuing with an unwritable bind mount only
 # produces a less useful EACCES error later in ensure-pi-packages.mjs.
 sudo mkdir -p "$DATA_ROOT" "${RUNTIME_DIRS[@]}"
-sudo chown node:node "$DATA_ROOT"
+# Fix the whole data tree, not just the root directory. Existing self-hosted or
+# cloud instances may already contain root-owned settings/, auth files, project
+# files, or generated tokens from earlier container versions.
+sudo chown -R node:node "$DATA_ROOT"
+sudo chmod u+rwX "$DATA_ROOT"
 for dir in "${RUNTIME_DIRS[@]}"; do
   sudo chown -R node:node "$dir"
   sudo chmod u+rwX "$dir"

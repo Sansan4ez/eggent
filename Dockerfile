@@ -3,7 +3,7 @@ WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 
 COPY package*.json ./
-RUN npm install --no-package-lock
+RUN npm ci
 
 FROM deps AS builder
 WORKDIR /app
@@ -78,7 +78,7 @@ RUN echo "node ALL=(root) NOPASSWD: ALL" > /etc/sudoers.d/eggent-node \
   && chmod 440 /etc/sudoers.d/eggent-node
 
 COPY package*.json ./
-RUN npm install --omit=dev --no-package-lock
+RUN npm ci --omit=dev
 
 COPY --from=builder /app/.next ./.next
 COPY --from=builder /app/next.config.mjs ./next.config.mjs
