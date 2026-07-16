@@ -6,581 +6,63 @@
   </a>
 </p>
 
-Eggent is a local-first AI workspace and orchestration layer for **pi SDK agents**.
+<p align="center">
+  <strong>Local-first AI workspace for project agents, files, pipelines, Telegram, and external API integrations.</strong>
+</p>
 
-Eggent provides the browser UI, APIs, project configuration, persistent storage, and multi-agent pipelines. The actual agent runtime — model loop, tools, skills, session behavior, compaction, retry, and execution events — is powered by [`@earendil-works/pi-coding-agent`](https://www.npmjs.com/package/@earendil-works/pi-coding-agent).
+Eggent is a browser-based AI workspace and orchestration layer. It gives you project-scoped agents, persistent files and memory, chat history, pasted image/file context, pipelines, Telegram integration, and a simple HTTP API for external systems.
 
-In the current architecture:
-
-```text
-Eggent UI + API
-  -> Eggent project config
-  -> pi SDK AgentSession
-  -> pi tools / skills / sessions / model runtime
-```
-
-The most important concept:
-
-```text
-Eggent Project = a directory-backed pi Agent configuration
-Eggent Pipeline = sequence of Eggent Projects
-```
-
-Every project directory contains the runtime files Eggent exposes in the UI:
-
-```text
-data/projects/<projectId>/
-  context.md    # pi agent instructions/context
-  memory.md     # plain Markdown persistent memory
-  skills/       # project-local Agent Skills
-  .mcp.json     # project-local MCP servers
-  model.json    # project model override or global inheritance
-```
-
-RAG/knowledge ingestion has been removed. Pipelines and agents pass long-lived state through project files, `memory.md`, and pipeline artifacts.
+The user-facing product is Eggent. Internally, Eggent uses an agent runtime and extension packages for model execution, tools, skills, MCP, scheduling, and web access.
 
 ---
 
-## What Eggent Does
+## Contents
 
-Eggent is responsible for:
-
-- a convenient chat UI for pi agents;
-- directory-backed project/agent configuration;
-- project-local context files, memory files, skills, MCP servers, and model settings;
-- persistent chat and pi session storage;
-- external/Telegram entrypoints;
-- multi-agent pipelines with artifact handoff;
-- project and pipeline management APIs.
-
-pi SDK is responsible for:
-
-- the agent loop;
-- tool calling;
-- skill loading and activation;
-- context files;
-- model resolution;
-- retries and compaction;
-- session lifecycle;
-- streaming events.
+- [Highlights](#highlights)
+- [Quick Start](#quick-start)
+- [Docker / VPS Deploy](#docker--vps-deploy)
+- [Core Concepts](#core-concepts)
+- [External API](#external-api)
+- [Other Useful APIs](#other-useful-apis)
+- [Telegram](#telegram)
+- [Pipelines](#pipelines)
+- [Files and Images](#files-and-images)
+- [MCP, Skills, and Models](#mcp-skills-and-models)
+- [Data Layout](#data-layout)
+- [Environment Variables](#environment-variables)
+- [Security Notes](#security-notes)
+- [Development](#development)
+- [Troubleshooting](#troubleshooting)
 
 ---
 
-## Core Architecture
+## Highlights
 
-```text
-User
-  -> Eggent Chat UI
-  -> POST /api/chat
-  -> createPiChatUIMessageStream()
-  -> createEggentPiSession()
-  -> pi AgentSession.prompt()
-  -> pi events
-  -> Eggent UI stream
-```
+- **Project agents** — every project has its own instructions, files, memory, skills, MCP config, and model settings.
+- **Local-first storage** — app data lives under `data/` and can be backed up as normal files.
+- **Modern dashboard** — projects, files, settings, models, MCP, skills, schedules, API token management, Telegram, and pipelines.
+- **Chat with context** — upload files, paste screenshots/images, and keep attachments tied to the chat.
+- **Pipelines** — run multiple project agents in sequence with artifact handoff.
+- **External API** — send messages from another service and preserve session/project/chat context between calls.
+- **Telegram bot** — use Eggent from Telegram with formatted responses and progress updates during long runs.
+- **Docker friendly** — optional `.env`, persistent volume, safe localhost bind by default.
+- **Credentials in UI** — provider keys can be configured during onboarding/settings; `.env` is optional.
 
-Main files:
+---
 
-```text
-src/app/api/chat/route.ts         # Main chat API; pi backend by default
-src/lib/pi/session.ts             # Builds pi AgentSession from Eggent project config
-src/lib/pi/chat-runner.ts         # Streams pi events to Eggent UI and stores messages
-src/lib/pi/eggent-tools.ts        # Eggent bridge tools exposed to pi
-src/lib/pi/project-config.ts      # Introspection of project -> pi config
-src/lib/pipelines/runner.ts       # Sequential project-agent pipeline runner
-```
+## Quick Start
 
-Legacy Eggent agent code still exists as a fallback, but it is no longer the default runtime.
+### Requirements
 
-To force the old runtime:
+- Node.js 20+
+- npm
+- Git
+
+### Local development
 
 ```bash
-EGGENT_AGENT_BACKEND=legacy npm run dev
-```
-
-Without that variable, `/api/chat` runs through pi SDK.
-
----
-
-## Eggent Projects Are pi Agent Configs
-
-An Eggent project is now a full configuration for a pi agent.
-
-A project can define:
-
-| Eggent Project Setting | How it reaches pi |
-| --- | --- |
-| Project instructions | Injected as a virtual pi context file |
-| Project files | Used as pi `cwd` |
-| Project skills | Passed as pi `additionalSkillPaths` |
-| Project MCP servers | Exposed through pi-mcp-adapter's `mcp` tool |
-| Project memory file | Exposed as `eggent_memory_*` tools over `memory.md` |
-| Project model settings | Resolved through pi `ModelRegistry` where possible |
-
-Project data lives under:
-
-```text
-data/projects/<projectId>/
-  context.md
-  memory.md
-  skills/
-  .mcp.json
-  model.json
-```
-
-When a project is launched as an agent, Eggent builds a pi session with that project as the runtime context.
-
----
-
-## Project Context Injection
-
-Project instructions are converted into a virtual context file for pi.
-
-Conceptually:
-
-```text
-context.md
-```
-
-It contains:
-
-```text
-# Eggent project context
-
-This Eggent project is the configuration for the current pi agent.
-
-Project id: ...
-Project name: ...
-Project description: ...
-Working directory: ...
-Memory namespace: ...
-
-Project instructions:
-...
-
-Available Eggent bridge tools:
-- eggent_memory_search / eggent_memory_save / eggent_memory_delete
-- mcp (from pi-mcp-adapter)
-- eggent_list_pipelines / eggent_start_pipeline
-```
-
-This lets pi treat each Eggent project as a proper agent environment.
-
----
-
-## Skills
-
-Eggent skills are project-local pi skills.
-
-They are stored as Agent Skills-compatible directories:
-
-```text
-data/projects/<projectId>/skills/<skill-name>/SKILL.md
-```
-
-When a project is launched, Eggent passes those `SKILL.md` files into pi as additional skill paths.
-
-You can manage skills from the Eggent UI, but the runtime behavior is pi's skill system.
-
----
-
-## MCP
-
-MCP servers are configured per Eggent project:
-
-```text
-data/projects/<projectId>/.mcp.json
-```
-
-When that project runs as a pi agent, pi-mcp-adapter exposes configured MCP servers through its proxy tool:
-
-```text
-mcp
-```
-
-Example:
-
-```text
-mcp({ server: "notion" })
-mcp({ tool: "notion_search", args: "{...}" })
-```
-
-pi can also configure project MCP via tools:
-
-```text
-upsert_mcp_server
-delete_mcp_server
-```
-
----
-
-## Memory
-
-Eggent memory is exposed to pi through bridge tools:
-
-```text
-eggent_memory_save
-eggent_memory_search
-eggent_memory_delete
-```
-
-Memory storage remains local under:
-
-```text
-data/memory/
-```
-
-Project memory behavior:
-
-| Project memory mode | Namespace |
-| --- | --- |
-| `isolated` | `data/memory/<projectId>/` |
-| `global` | `data/memory/main/` |
-
-So memory is still stored and indexed by Eggent, but accessed by pi.
-
----
-
-## Knowledge / RAG
-
-RAG has been removed from Eggent. Use project files, `memory.md`, skills, MCP tools, and pipeline artifacts instead.
-
----
-
-## Eggent Bridge Tools Exposed to pi
-
-When a pi agent is created by Eggent, it receives Eggent bridge tools such as:
-
-```text
-list_projects
-create_project
-switch_project
-
-create_skill
-
-upsert_mcp_server
-delete_mcp_server
-
-eggent_memory_save
-eggent_memory_search
-eggent_memory_delete
-
-
-eggent_list_pipelines
-eggent_start_pipeline
-```
-
-This means pi can manage Eggent configuration through normal tool calls.
-
-Example user request:
-
-```text
-Create a new agent for NDA review with a legal-review skill and a signature MCP server.
-```
-
-The pi agent can call:
-
-```text
-create_project
-create_skill
-upsert_mcp_server
-```
-
----
-
-## Chat Sessions
-
-Eggent stores chat messages for UI rendering under:
-
-```text
-data/chats/
-```
-
-pi sessions are persisted separately under:
-
-```text
-data/pi-sessions/
-```
-
-This gives Eggent a UI-friendly chat history while preserving pi's own session lifecycle and context handling.
-
----
-
-## Pipelines
-
-A pipeline is a sequence of Eggent projects.
-
-Because each Eggent project is a pi agent configuration, a pipeline is effectively a sequence of pi agents.
-
-```text
-Pipeline
-  -> Project A as pi agent
-  -> Project B as pi agent
-  -> Project C as pi agent
-```
-
-Pipeline steps look like:
-
-```json
-{
-  "id": "review",
-  "name": "Review NDA",
-  "projectId": "nda-reviewer",
-  "instructions": "Read nda-draft.md and save nda-reviewed.md."
-}
-```
-
-The `projectId` is the key field: it tells Eggent which project/pi-agent config to launch for that step.
-
----
-
-## Pipeline Handoff Model
-
-Agents in a pipeline pass information through artifacts, not through one huge chat context.
-
-Each run gets:
-
-```text
-data/pipeline-runs/run_xxx/
-  run.json
-  artifacts/
-```
-
-A typical NDA pipeline might create:
-
-```text
-data/pipeline-runs/run_xxx/artifacts/
-  nda-draft.md
-  nda-reviewed.md
-  nda-review.md
-  signers.json
-  send-package.md
-  send-result.json
-```
-
-This lets pipelines scale to many agents because each agent can read and write files instead of carrying the entire history in model context.
-
----
-
-## Pipeline UI
-
-Pipeline management is available at:
-
-```text
-/dashboard/pipelines
-```
-
-Run details are available at:
-
-```text
-/dashboard/pipeline-runs/<runId>
-```
-
-The UI supports:
-
-- pipeline definitions;
-- JSON step editing;
-- generating a pipeline from current projects;
-- starting runs;
-- run status;
-- per-step project/agent status;
-- artifact listing;
-- artifact preview;
-- continue/retry.
-
----
-
-## Pipeline APIs
-
-```text
-GET    /api/pipelines
-POST   /api/pipelines
-GET    /api/pipelines/[id]
-PUT    /api/pipelines/[id]
-DELETE /api/pipelines/[id]
-
-GET    /api/pipeline-runs
-POST   /api/pipeline-runs
-GET    /api/pipeline-runs/[id]
-POST   /api/pipeline-runs/[id]
-
-GET    /api/pipeline-runs/[id]/artifacts
-GET    /api/pipeline-runs/[id]/artifacts?path=<artifactPath>
-```
-
-Project-to-pi introspection:
-
-```text
-GET /api/projects/[id]/pi-config
-```
-
----
-
-## Example: NDA Workflow
-
-A good NDA workflow is now modeled as multiple projects:
-
-```text
-nda-drafter      # drafts the document
-nda-reviewer     # checks legal consistency
-signers-agent    # identifies signers and signing order
-send-agent       # sends or prepares send package
-```
-
-Each project has its own directory-backed files:
-
-```text
-context.md
-memory.md
-skills/
-.mcp.json
-model.json
-regular project files
-```
-
-The pipeline is just the sequence:
-
-```json
-{
-  "id": "nda-send",
-  "name": "Send NDA",
-  "steps": [
-    {
-      "id": "draft",
-      "name": "Draft NDA",
-      "projectId": "nda-drafter",
-      "instructions": "Create nda-draft.md."
-    },
-    {
-      "id": "review",
-      "name": "Review NDA",
-      "projectId": "nda-reviewer",
-      "instructions": "Review nda-draft.md and create nda-reviewed.md."
-    },
-    {
-      "id": "signers",
-      "name": "Collect Signers",
-      "projectId": "signers-agent",
-      "instructions": "Create signers.json."
-    },
-    {
-      "id": "send",
-      "name": "Send NDA",
-      "projectId": "send-agent",
-      "instructions": "Send or prepare the signature package."
-    }
-  ]
-}
-```
-
----
-
-## Releases
-
-- Latest release snapshot: [0.1.6 - Telegram Long Polling](./docs/releases/0.1.6-telegram-long-polling.md)
-- GitHub release body: [v0.1.6](./docs/releases/github-v0.1.6.md)
-- Release archive: [docs/releases/README.md](./docs/releases/README.md)
-
----
-
-## Installation
-
-Choose the deployment method that best fits your needs:
-
-| Method | Best For | Command |
-| --- | --- | --- |
-| **Docker** (One-command) | Fastest setup, VPS, production | `curl -fsSL https://raw.githubusercontent.com/eggent-ai/eggent/main/scripts/install.sh \| bash` |
-| **Docker** (Manual) | Containerized runtime, full control | `npm run setup:docker` |
-| **Local/Node.js** | Run directly on your machine | `npm run setup:local` |
-| **Development** | Active development, hot reload | `npm run dev` |
-
----
-
-## Docker Deployment
-
-### Option A: One-command Installer
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/eggent-ai/eggent/main/scripts/install.sh | bash
-```
-
-What it does:
-
-- installs Docker best-effort on macOS/Linux if missing;
-- clones/updates Eggent in `~/.eggent`;
-- runs Docker deployment via `scripts/install-docker.sh`.
-
-Environment variables:
-
-| Variable | Default | Description |
-| --- | --- | --- |
-| `EGGENT_INSTALL_DIR` | `~/.eggent` | Target directory |
-| `EGGENT_BRANCH` | `main` | Git branch to use |
-| `EGGENT_REPO_URL` | `https://github.com/eggent-ai/eggent.git` | Repository URL |
-| `EGGENT_AUTO_INSTALL_DOCKER` | `1` | Auto-install Docker if missing |
-| `EGGENT_APP_BIND_HOST` | `0.0.0.0` on Linux / `127.0.0.1` elsewhere | Docker bind host |
-
-Example:
-
-```bash
-EGGENT_INSTALL_DIR=~/apps/eggent \
-EGGENT_BRANCH=main \
-EGGENT_AUTO_INSTALL_DOCKER=1 \
-curl -fsSL https://raw.githubusercontent.com/eggent-ai/eggent/main/scripts/install.sh | bash
-```
-
-Open:
-
-```text
-http://localhost:3000
-```
-
-On Linux/VPS, the one-command installer publishes the app on all interfaces by default.
-
-### Option B: Manual Docker Setup
-
-```bash
-npm run setup:docker
-```
-
-Useful commands:
-
-```bash
-docker compose logs -f app
-docker compose restart app
-docker compose down
-docker compose up -d app
-```
-
----
-
-## Local/Node.js Deployment
-
-```bash
-npm run setup:local
-npm run start
-```
-
-Open:
-
-```text
-http://localhost:3000
-```
-
-Manual setup:
-
-```bash
-cp .env.example .env
-npm install
-npm run build
-npm run start
-```
-
----
-
-## Development
-
-```bash
+git clone https://github.com/eggent-ai/eggentpi.git
+cd eggentpi
 npm install
 npm run dev
 ```
@@ -591,288 +73,594 @@ Open:
 http://localhost:3000
 ```
 
-Development scripts:
+On first launch, configure login/model credentials in the UI. Provider API keys do not have to be placed in `.env`.
+
+Optional local helper:
 
 ```bash
-npm run lint
-npm run build
+npm run setup:local
 ```
-
-`npm run build` intentionally uses webpack (`next build --no-lint`), not Turbopack. Turbopack can hard-fail on out-of-root symlinks in `data/` project virtual environments.
 
 ---
 
-## Updating Eggent
+## Docker / VPS Deploy
 
-Back up before updating:
+### Run with Docker Compose
+
+```bash
+git clone https://github.com/eggent-ai/eggentpi.git
+cd eggentpi
+cp .env.example .env # optional
+docker compose up -d --build
+```
+
+Docker mounts persistent data here:
 
 ```text
-.env
-data/
+./data -> /app/data
 ```
 
-One-command installer users can rerun:
+### Important bind default
+
+By default Eggent binds only to localhost:
+
+```env
+APP_BIND_HOST=127.0.0.1
+APP_PORT=3000
+```
+
+This is intentional and safer for VPS installs behind a reverse proxy.
+
+If you really want to expose the container directly:
+
+```env
+APP_BIND_HOST=0.0.0.0
+APP_PORT=3000
+APP_BASE_URL=https://your-domain.example
+```
+
+Then recreate:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/eggent-ai/eggent/main/scripts/install.sh | bash
+docker compose up -d --build --force-recreate
 ```
 
-Manual repo update:
-
-```bash
-git pull --ff-only origin main
-npm install
-npm run build
-npm run start
-```
-
-Health check:
-
-```bash
-curl http://localhost:3000/api/health
-```
+For production, prefer Caddy/Nginx/Traefik with HTTPS and keep `APP_BIND_HOST=127.0.0.1`.
 
 ---
 
-## Runtime Scripts
+## Core Concepts
 
-| Script | Purpose |
-| --- | --- |
-| `npm run dev` | Next.js dev server |
-| `npm run build` | Production build |
-| `npm run start` | Production server |
-| `npm run lint` | ESLint |
-| `npm run setup:one` | One-command installer wrapper |
-| `npm run setup:local` | Local production bootstrap |
-| `npm run setup:docker` | Docker production bootstrap |
+### Project
+
+An Eggent project is a directory-backed agent configuration:
+
+```text
+data/projects/<projectId>/
+  context.md    # project instructions/context
+  memory.md     # project memory
+  skills/       # project-local skills
+  .mcp.json     # project MCP servers
+  model.json    # project model override or inherited global model
+```
+
+When a project is selected, Eggent runs the agent with that project as context. Sidebar folder selection is UI-only and does not silently change the agent working directory.
+
+### Chat
+
+A chat stores messages, runtime stats, attached files, and the active project context. Uploaded and pasted chat files are exposed to the agent as readable context paths.
+
+### Pipeline
+
+A pipeline is a saved sequence of project-agent steps. Steps run top-to-bottom and can use artifacts from previous steps.
+
+### Schedule
+
+Schedules are surfaced in Eggent UI and stored in runtime schedule files. Current limitation: scheduled jobs run while the Eggent process is alive; automatic rehydration after restart is not fully implemented yet.
 
 ---
 
-## Configuration
+## External API
 
-Base flow:
+The External API is the recommended way to connect Eggent to other products: bots, CRMs, internal tools, websites, background jobs, no-code automations, and backend services.
 
-```bash
-cp .env.example .env
+It accepts a message, runs Eggent, and returns the final text reply. Eggent keeps external session state across calls: active project, active chat, and current path.
+
+### Endpoint
+
+```http
+POST /api/external/message
+Authorization: Bearer <external-api-token>
+Content-Type: application/json
 ```
 
-Main environment variables:
+This endpoint does not require a browser login cookie, but it **always** requires a bearer token.
 
-| Variable | Required | Purpose |
+### Create an API token
+
+Recommended:
+
+1. Open Eggent.
+2. Go to **Settings → API**.
+3. Generate an External API token.
+4. Store it in your external service as a secret.
+
+Alternative server fallback:
+
+```env
+EXTERNAL_API_TOKEN=replace-with-a-long-random-token
+```
+
+A token generated in the UI is stored in `data/settings/` and takes precedence over `EXTERNAL_API_TOKEN`.
+
+### Minimal curl example
+
+```bash
+curl -X POST http://localhost:3000/api/external/message \
+  -H "Authorization: Bearer $EGGENT_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sessionId": "customer-42",
+    "message": "Summarize what Eggent can do"
+  }'
+```
+
+### Use a project by name
+
+```bash
+curl -X POST http://localhost:3000/api/external/message \
+  -H "Authorization: Bearer $EGGENT_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sessionId": "telegram-user-123",
+    "projectName": "Support Agent",
+    "message": "Draft a reply asking the customer for logs"
+  }'
+```
+
+### Use a project by id
+
+```bash
+curl -X POST http://localhost:3000/api/external/message \
+  -H "Authorization: Bearer $EGGENT_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "sessionId": "job:daily-report",
+    "projectId": "research-agent",
+    "message": "Read the project files and prepare a short report",
+    "currentPath": "./"
+  }'
+```
+
+`projectId` may be either the actual project id or an exact project name if it resolves to one project. Prefer `projectName` when passing names.
+
+### JavaScript example
+
+```ts
+const response = await fetch("https://eggent.example.com/api/external/message", {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${process.env.EGGENT_API_TOKEN}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    sessionId: "crm:customer-123",
+    projectName: "Sales Assistant",
+    message: "Write a concise follow-up email based on the latest notes.",
+  }),
+});
+
+if (!response.ok) {
+  throw new Error(await response.text());
+}
+
+const result = await response.json();
+console.log(result.reply);
+```
+
+### Request body
+
+| Field | Required | Type | Description |
+| --- | --- | --- | --- |
+| `sessionId` | Yes | string | Stable external session key. Use one per user, thread, customer, or job. |
+| `message` | Yes | string | The task/message to send to Eggent. Must be non-empty. |
+| `projectId` | No | string | Project id, or exact project name when unique. |
+| `projectName` | No | string | Exact project name. Useful for readable integrations. |
+| `chatId` | No | string | Existing Eggent chat id. Must match the same project context. Usually omit. |
+| `currentPath` | No | string | Optional working path hint for file-oriented tasks. |
+
+### Response body
+
+```json
+{
+  "success": true,
+  "sessionId": "customer-42",
+  "reply": "Here is the answer...",
+  "context": {
+    "activeProjectId": "support-agent",
+    "activeProjectName": "Support Agent",
+    "activeChatId": "0a2f...",
+    "currentPath": ""
+  },
+  "switchedProject": null,
+  "createdProject": null
+}
+```
+
+If Eggent switches or creates a project during the run, the response includes that information:
+
+```json
+{
+  "switchedProject": {
+    "toProjectId": "new-project-id",
+    "toProjectName": "New Project"
+  },
+  "createdProject": {
+    "id": "new-project-id",
+    "name": "New Project"
+  }
+}
+```
+
+### How `sessionId` works
+
+Eggent stores external session state by `sessionId`:
+
+- active project;
+- active chat for each project/orchestrator context;
+- current path for each context.
+
+Good session id examples:
+
+```text
+telegram:<user-id>
+slack:<workspace-id>:<channel-id>:<thread-ts>
+crm:<customer-id>
+job:<workflow-id>
+```
+
+Reuse the same `sessionId` to continue the same external conversation.
+
+### Common API errors
+
+| Status | Meaning | Fix |
 | --- | --- | --- |
-| `OPENAI_API_KEY` | No | Optional pi OpenAI provider key; can also be stored in pi `auth.json` |
-| `ANTHROPIC_API_KEY` | No | Optional pi Anthropic provider key; can also be stored in pi `auth.json` |
-| `GOOGLE_API_KEY` | No | Optional pi Google provider key; can also be stored in pi `auth.json` |
-| `OPENROUTER_API_KEY` | No | Optional pi OpenRouter provider key; can also be stored in pi `auth.json` |
-| `TAVILY_API_KEY` | No | Web search integration |
-| `EXTERNAL_API_TOKEN` | No, auto-generated by setup scripts | External message API auth token |
-| `TELEGRAM_BOT_TOKEN` | No | Telegram bot token |
-| `TELEGRAM_WEBHOOK_SECRET` | No, auto-generated by setup scripts | Telegram webhook secret |
-| `TELEGRAM_DEFAULT_PROJECT_ID` | No | Default project/pi-agent config for Telegram |
-| `TELEGRAM_ALLOWED_USER_IDS` | No | Comma/space separated Telegram `user_id` allowlist |
-| `APP_BASE_URL` | Recommended | Public app URL used by integrations |
-| `APP_BIND_HOST` | No | Docker port bind host |
-| `APP_PORT` | No | Published app port; default `3000` |
-| `APP_TMP_DIR` | No | Docker temp directory passed as `TMPDIR` |
-| `PLAYWRIGHT_BROWSERS_PATH` | No | Browser install/cache path |
-| `NPM_CONFIG_CACHE` | No | npm cache directory |
-| `XDG_CACHE_HOME` | No | Generic CLI cache directory |
-| `CODEX_AUTH_FILE` | No | Explicit path to Codex OAuth file |
-| `GEMINI_OAUTH_CREDS_FILE` | No | Explicit path to Gemini OAuth creds file |
-| `GEMINI_SETTINGS_FILE` | No | Explicit path to Gemini settings file |
-| `EGGENT_AGENT_BACKEND` | No | Set to `legacy` to use old Eggent agent instead of pi |
+| `400` | Missing `sessionId` or `message` | Send both as non-empty strings. |
+| `401` | Missing/invalid bearer token | Check `Authorization: Bearer ...`. |
+| `404` | Project or chat not found | Verify ids/names in the UI or `/api/projects`. |
+| `409` | Ambiguous project name or chat/project mismatch | Use exact `projectId` or omit `chatId`. |
+| `503` | External token is not configured | Generate token in Settings → API or set `EXTERNAL_API_TOKEN`. |
 
-Model connections are owned by pi, not by Eggent. Use Eggent Settings as a UI for pi `~/.pi/agent/auth.json` and `~/.pi/agent/models.json`, or configure pi directly with `/login`, environment variables, or custom `models.json`.
+### Production integration tips
+
+- Use HTTPS.
+- Never expose the bearer token in frontend/browser code.
+- Call Eggent from your backend, worker, or serverless function.
+- Use one stable `sessionId` per real conversation/thread/job.
+- Set a generous client timeout; complex agent runs can take minutes.
+- The External API returns a final reply, not a streaming response.
 
 ---
 
-## Data Persistence
+## Other Useful APIs
 
-Runtime state lives in `./data`.
+Most dashboard APIs require an authenticated Eggent browser session. For server-to-server messaging, use `/api/external/message`.
 
-Important directories:
+### Health
 
-```text
-data/chats/             # Eggent UI chat history
-data/pi-sessions/       # pi session files per Eggent chat / pipeline step
-data/projects/          # Eggent projects = pi agent configs
-data/projects/<id>/memory.md # plain Markdown project memory
-data/pipelines/         # pipeline definitions
-data/pipeline-runs/     # pipeline runs and artifacts
-data/settings/          # app settings
-data/integrations/      # integration state
+```http
+GET /api/health
 ```
 
-Docker mounts `./data` into `/app/data`.
+### Projects
 
-Back up `data/` and `.env` for disaster recovery.
-
----
-
-## Security Defaults
-
-Docker defaults are security-oriented:
-
-- default bind: `127.0.0.1:${APP_PORT:-3000}:3000` unless configured otherwise;
-- non-root container user (`node`);
-- `node` user has passwordless `sudo` in the container for AI-driven package installation.
-
-Project-local skills, MCP servers, and files can influence agent behavior. Treat project configuration as trusted workspace configuration.
-
----
-
-## Health Check
-
-```bash
-curl http://localhost:3000/api/health
+```http
+GET    /api/projects
+POST   /api/projects
+GET    /api/projects/:id
+PUT    /api/projects/:id
+DELETE /api/projects/:id
 ```
 
-Expected response:
+Create project payload:
 
 ```json
 {
-  "status": "ok",
-  "timestamp": "...",
-  "version": "..."
+  "name": "Support Agent",
+  "description": "Handles support drafts and triage",
+  "instructions": "Be concise and ask for logs when needed.",
+  "memoryMode": "global"
 }
 ```
 
----
+### Project configuration
 
-## VPS Production Checklist
-
-1. Configure at least one pi model connection in Eggent Settings, pi `/login`, `~/.pi/agent/auth.json`, or environment variables.
-2. Change default dashboard credentials immediately after first login.
-3. If using Telegram/webhooks, set public HTTPS `APP_BASE_URL`.
-4. Keep `data/` persistent and writable.
-5. Ensure outbound network access to provider APIs and MCP services.
-6. Back up `data/` and `.env`.
-
----
-
-## Troubleshooting
-
-### App works on `localhost` but not on `127.0.0.1`
-
-Use one host consistently. Browser storage/cookies are origin-scoped.
-
-### Docker container does not become healthy
-
-```bash
-docker compose logs --tail 200 app
+```http
+GET/PUT /api/projects/:id/context
+GET/PUT /api/projects/:id/memory
+GET/PUT /api/projects/:id/model
+GET     /api/projects/:id/pi-config
+GET/POST/DELETE /api/projects/:id/skills
+GET/PUT /api/projects/:id/mcp
 ```
 
-Verify `.env` values and pi model connections.
+### Chat and chat files
 
-### pi model/provider cannot authenticate
+```http
+POST /api/chat              # streaming UI chat endpoint
+GET  /api/chat/history
+GET/POST/DELETE /api/chat/files
+```
 
-Check that a provider key is configured through pi. Eggent Settings edits pi `auth.json` and `models.json` directly. You can also use pi CLI `/login` or environment variables such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, or `OPENROUTER_API_KEY`.
+Upload a chat file:
 
-### Pipeline step does not use the expected agent
+```bash
+curl -X POST http://localhost:3000/api/chat/files \
+  -F "chatId=<chat-id>" \
+  -F "file=@./screenshot.png"
+```
 
-Check the pipeline step has the correct `projectId`:
+### Project files
+
+```http
+GET  /api/files
+GET  /api/files/content
+GET  /api/files/download
+POST /api/files/upload
+```
+
+Upload files to a project workspace:
+
+```bash
+curl -X POST http://localhost:3000/api/files/upload \
+  -F "project=<project-id>" \
+  -F "path=." \
+  -F "files=@./notes.md"
+```
+
+### Pipelines
+
+```http
+GET    /api/pipelines
+POST   /api/pipelines
+GET    /api/pipelines/:id
+PUT    /api/pipelines/:id
+DELETE /api/pipelines/:id
+GET    /api/pipeline-runs
+GET    /api/pipeline-runs/:id
+GET    /api/pipeline-runs/:id/artifacts
+```
+
+Example pipeline payload:
 
 ```json
 {
-  "projectId": "my-agent-project"
+  "name": "Research then Write",
+  "description": "Collect context in one project, draft in another.",
+  "steps": [
+    {
+      "id": "research",
+      "name": "Research",
+      "projectId": "research-agent",
+      "prompt": "Research the topic and save useful findings as artifacts."
+    },
+    {
+      "id": "draft",
+      "name": "Draft",
+      "projectId": "writing-agent",
+      "prompt": "Use previous artifacts to write the final draft."
+    }
+  ]
 }
 ```
 
-Then inspect:
+### External token management
 
-```text
-GET /api/projects/<projectId>/pi-config
+```http
+GET  /api/external/token
+POST /api/external/token
 ```
 
-### MCP tool is missing in chat
+These are dashboard-authenticated. Use the Settings → API page unless you are automating with an authenticated session.
 
-Verify project MCP config:
+### Schedules
+
+```http
+GET /api/pi-schedules
+```
+
+Returns discovered schedule files across orchestrator/project contexts.
+
+---
+
+## Telegram
+
+Eggent can connect to a Telegram bot and route messages into Eggent sessions.
+
+Supported commands:
+
+- `/start`
+- `/help`
+- `/code`
+- `/new`
+
+Telegram replies use safe HTML formatting for common Markdown patterns such as bold text, inline code, code blocks, and links. Long runs send typing actions and sparse progress messages so the bot does not feel stuck.
+
+Configure in the UI or via env:
+
+```env
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_WEBHOOK_SECRET=
+TELEGRAM_DEFAULT_PROJECT_ID=
+APP_BASE_URL=https://your-domain.example
+```
+
+---
+
+## Pipelines
+
+Use pipelines when a task needs several project agents in a fixed order.
+
+Examples:
+
+- research → writing → review;
+- backend → frontend → QA;
+- support triage → draft response → final check;
+- extraction → analysis → report.
+
+Each step should set `projectId`. Artifacts from earlier steps are available to later steps.
+
+---
+
+## Files and Images
+
+Eggent context can come from:
+
+- project files;
+- chat uploads;
+- pasted screenshots/images;
+- `context.md`;
+- `memory.md`;
+- pipeline artifacts.
+
+Pasted images are stored as chat files and passed to the agent with file type and absolute path metadata.
+
+---
+
+## MCP, Skills, and Models
+
+### MCP
+
+Per-project MCP configuration:
 
 ```text
 data/projects/<projectId>/.mcp.json
 ```
 
-Then restart the chat/session. MCP tools appear as:
+Manage it from the dashboard MCP pages.
 
-```text
-mcp
-```
+### Skills
 
-### Skill is not being used
-
-Verify the skill has a valid `SKILL.md`:
+Project-local skills:
 
 ```text
 data/projects/<projectId>/skills/<skill-name>/SKILL.md
 ```
 
-The skill must have valid frontmatter with a name and description.
+### Models
 
-### Build fails after dependency changes
+Project model configuration:
+
+```text
+data/projects/<projectId>/model.json
+```
+
+Model credentials can be configured in the UI. Environment provider keys are optional fallback credentials.
+
+---
+
+## Data Layout
+
+```text
+data/
+  settings/      # auth secret, external API token, app settings
+  projects/      # project workspaces and project config
+  chats/         # chat history
+  chat-files/    # uploaded/pasted chat attachments
+  memory/        # memory namespaces
+  pipelines/     # pipeline definitions, runs, artifacts
+  pi-agent/      # embedded runtime config in Docker by default
+```
+
+Back up `data/` before upgrades or migrations.
+
+---
+
+## Environment Variables
+
+See `.env.example` for the full list.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `APP_BIND_HOST` | `127.0.0.1` | Docker host bind. Use `0.0.0.0` only intentionally. |
+| `APP_PORT` | `3000` | Docker host port. |
+| `APP_BASE_URL` | `http://localhost:3000` | Public URL for integrations/webhooks. |
+| `EGGENT_AUTH_SECRET` | generated in `data/settings/auth-secret` | App auth signing secret. |
+| `EXTERNAL_API_TOKEN` | unset | Optional fallback token for `/api/external/message`. |
+| `TELEGRAM_BOT_TOKEN` | unset | Telegram bot token. |
+| `TELEGRAM_WEBHOOK_SECRET` | unset | Optional Telegram webhook secret. |
+| `TELEGRAM_DEFAULT_PROJECT_ID` | unset | Default project for Telegram. |
+| `PI_CODING_AGENT_DIR` | Docker: `/app/data/pi-agent` | Runtime config directory. |
+| `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `OPENROUTER_API_KEY` | unset | Optional provider fallback keys. |
+
+---
+
+## Security Notes
+
+- Keep Docker bound to `127.0.0.1` when using a reverse proxy.
+- Use HTTPS for public deployments.
+- Treat External API tokens like passwords.
+- Do not expose bearer tokens in browser/frontend code.
+- Back up and protect `data/`; it contains chats, files, memory, settings, and tokens.
+
+---
+
+## Development
 
 ```bash
 npm install
+npm run dev
+npm run lint
 npm run build
 ```
 
-### Turbopack fails on symlinks in `data/`
-
-Use the configured build script:
-
-```bash
-npm run build
-```
-
-It uses webpack instead of Turbopack.
-
-### Docker permissions issues
-
-Try with `sudo docker ...` or add your user to the `docker` group.
-
-### `python3`, `curl`, `git`, `jq`, or `rg` missing
-
-Install recommended CLI utilities:
-
-```bash
-sudo apt-get update && sudo apt-get install -y python3 curl git jq ripgrep
-```
-
----
-
-## Project Layout
+Useful paths:
 
 ```text
-src/app/                 # Next.js routes and API endpoints
-src/components/          # UI components
-src/lib/pi/              # Eggent -> pi SDK integration
-src/lib/pipelines/       # Pipeline definitions, storage, runner
-src/lib/storage/         # Disk stores for projects, chats, settings, integrations
-src/lib/memory/          # Legacy vector/RAG backend, no longer part of default pi runtime
-src/lib/mcp/             # MCP connection backend exposed to pi
-src/lib/agent/           # Legacy Eggent agent fallback
-src/lib/tools/           # Legacy/bridge utility wrappers
-bundled-skills/          # Built-in skill packs installable into projects
-data/                    # Runtime state, generated locally
-scripts/                 # Install and utility scripts
-docs/                    # Additional docs
-docker-compose.yml       # Container runtime
-Dockerfile               # Production image build
+src/app/dashboard/       # dashboard pages
+src/app/api/             # API routes
+src/components/chat/     # chat UI
+src/components/ui/       # shared UI primitives
+src/lib/pi/              # agent runtime integration
+src/lib/pipelines/       # pipeline store/runner
+src/lib/telegram/        # Telegram integration
+src/lib/storage/         # filesystem-backed stores
 ```
 
 ---
 
-## Contributing and Support
+## Troubleshooting
 
-- Contributing guide: [CONTRIBUTING.md](./CONTRIBUTING.md)
-- Report a bug: [Bug report form](https://github.com/eggent-ai/eggent/issues/new?template=bug_report.yml)
-- Request a feature: [Feature request form](https://github.com/eggent-ai/eggent/issues/new?template=feature_request.yml)
-- Code of conduct: [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md)
-- Security policy: [SECURITY.md](./SECURITY.md)
+### I cannot access Docker from another machine
+
+Default bind is localhost. Use a reverse proxy or set:
+
+```env
+APP_BIND_HOST=0.0.0.0
+```
+
+### External API returns `503`
+
+No External API token is configured. Generate one in Settings → API or set `EXTERNAL_API_TOKEN`.
+
+### External API returns `409`
+
+The project name is ambiguous or the supplied `chatId` belongs to another project. Use exact `projectId` or omit `chatId`.
+
+### The agent does not see a file
+
+Make sure the file is uploaded/pasted into the active chat or stored inside the selected project workspace.
+
+### Telegram feels silent during long runs
+
+Check bot configuration and polling/webhook status in the dashboard. Eggent sends typing actions and progress updates during long runs.
+
+### Schedules after restart
+
+Runtime schedule files are stored under `.pi/subagent-schedules/` inside each context, but automatic rehydration after process restart is still limited.
 
 ---
 
-## Notes
+## License
 
-- License: MIT. See `LICENSE`.
-- Eggent is local-first: runtime state is kept on disk under `./data`.
-- pi SDK is the default agent runtime.
+Private/internal project unless a license is added.
