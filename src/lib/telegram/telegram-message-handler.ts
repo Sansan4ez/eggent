@@ -26,6 +26,7 @@ import {
     saveExternalSession,
 } from "@/lib/storage/external-session-store";
 import { getAllProjects } from "@/lib/storage/project-store";
+import { transcribeAudioFile } from "@/lib/speech/transcriber";
 import crypto from "node:crypto";
 
 const TELEGRAM_TEXT_LIMIT = 4096;
@@ -76,6 +77,7 @@ export interface TelegramMessage {
     voice?: {
         file_id?: unknown;
         mime_type?: unknown;
+        duration?: unknown;
     };
 }
 
@@ -580,6 +582,7 @@ function helpText(activeProject?: { id?: string; name?: string }): string {
         "/new - start a new conversation (reset context)",
         "",
         "Text messages are sent to the agent.",
+        "Voice messages are transcribed locally and sent to the agent.",
         "File uploads are saved into chat files.",
         "You can also ask the agent to send a local file back to Telegram.",
     ].join("\n");
@@ -729,8 +732,10 @@ export async function processTelegramUpdate(
             path: string;
             size: number;
         } | null = null;
+        let transcribedVoiceText = "";
 
         const incomingFile = message ? extractIncomingFile(message, messageId) : null;
+        const isVoiceMessage = Boolean(message?.voice?.file_id);
         let externalContext: TelegramExternalChatContext | null = null;
         if (incomingFile) {
             externalContext = await ensureTelegramExternalChatContext({
@@ -748,9 +753,50 @@ export async function processTelegramUpdate(
                 path: saved.path,
                 size: saved.size,
             };
+
+            if (isVoiceMessage) {
+                await sendTelegramChatAction(botToken, chatId).catch(() => undefined);
+                await sendTelegramMessage(
+                    botToken,
+                    chatId,
+                    "🎙 Расшифровываю голосовое локально…",
+                    messageId
+                );
+                try {
+                    const transcription = await transcribeAudioFile({
+                        filePath: saved.path,
+                        filename: saved.name,
+                        mimeType:
+                            typeof message?.voice?.mime_type === "string"
+                                ? message.voice.mime_type
+                                : "audio/ogg",
+                    });
+                    transcribedVoiceText = transcription.transcript;
+                } catch (error) {
+                    await sendTelegramMessage(
+                        botToken,
+                        chatId,
+                        `Не удалось расшифровать голосовое: ${error instanceof Error ? error.message : "unknown error"}`,
+                        messageId
+                    );
+                    return {
+                        ok: true,
+                        handledError: true,
+                        fileSaved: true,
+                        file: incomingSavedFile,
+                    };
+                }
+            }
         }
 
-        if (!incomingText) {
+        const effectiveIncomingText = transcribedVoiceText
+            ? [
+                incomingText ? `Комментарий к голосовому: ${incomingText}` : "",
+                `🎙 Голосовое сообщение:\n${transcribedVoiceText}`,
+            ].filter(Boolean).join("\n\n")
+            : incomingText;
+
+        if (!effectiveIncomingText) {
             if (incomingSavedFile) {
                 await sendTelegramMessage(
                     botToken,
@@ -768,7 +814,7 @@ export async function processTelegramUpdate(
             await sendTelegramMessage(
                 botToken,
                 chatId,
-                "Only text messages and file uploads are supported right now.",
+                "Only text messages, voice messages, and file uploads are supported right now.",
                 messageId
             );
             return { ok: true, ignored: true, reason: "non_text" };
@@ -783,9 +829,9 @@ export async function processTelegramUpdate(
         try {
             const result = await handleExternalMessage({
                 sessionId,
-                message: incomingSavedFile
-                    ? `${incomingText}\n\nAttached file: ${incomingSavedFile.name}`
-                    : incomingText,
+                message: incomingSavedFile && !isVoiceMessage
+                    ? `${effectiveIncomingText}\n\nAttached file: ${incomingSavedFile.name}`
+                    : effectiveIncomingText,
                 projectId: externalContext?.projectId ?? defaultProjectId,
                 chatId: externalContext?.chatId,
                 currentPath: normalizeTelegramCurrentPath(externalContext?.currentPath),

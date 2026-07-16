@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useCallback, useState, useEffect } from "react";
-import { Send, Square, Paperclip, X, FileIcon, ImageIcon } from "lucide-react";
+import { Send, Square, Paperclip, X, FileIcon, ImageIcon, Mic, MicOff, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ChatFile } from "@/lib/types";
 import type { PiRuntimeStats } from "@/lib/pi/types";
@@ -80,9 +80,16 @@ export function ChatInput({
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const audioStreamRef = useRef<MediaStream | null>(null);
+  const latestInputRef = useRef(input);
   const [isDragging, setIsDragging] = useState(false);
   const [uploadingFiles, setUploadingFiles] = useState<string[]>([]);
   const [uploadedFiles, setUploadedFiles] = useState<ChatFile[]>([]);
+  const [isRecording, setIsRecording] = useState(false);
+  const [isTranscribing, setIsTranscribing] = useState(false);
+  const [speechError, setSpeechError] = useState<string | null>(null);
 
   // Load chat files when chatId changes
   useEffect(() => {
@@ -112,6 +119,10 @@ export function ChatInput({
       cancelled = true;
     };
   }, [chatId]);
+
+  useEffect(() => {
+    latestInputRef.current = input;
+  }, [input]);
 
   const canSubmit = Boolean(input.trim()) || uploadedFiles.length > 0;
   const submitCurrentMessage = useCallback(() => {
@@ -255,6 +266,113 @@ export function ChatInput({
     [uploadFile]
   );
 
+  const appendTranscriptToInput = useCallback((transcript: string) => {
+    const current = latestInputRef.current.trim();
+    const next = current ? `${current}\n\n${transcript}` : transcript;
+    setInput(next);
+    requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.style.height = "auto";
+      textarea.style.height = Math.min(textarea.scrollHeight, 200) + "px";
+    });
+  }, [setInput]);
+
+  const stopAudioTracks = useCallback(() => {
+    audioStreamRef.current?.getTracks().forEach((track) => track.stop());
+    audioStreamRef.current = null;
+  }, []);
+
+  const transcribeRecording = useCallback(async (blob: Blob) => {
+    setIsTranscribing(true);
+    setSpeechError(null);
+    try {
+      const ext = blob.type.includes("ogg") ? "ogg" : blob.type.includes("webm") ? "webm" : "audio";
+      const file = new File([blob], `dictation-${Date.now()}.${ext}`, { type: blob.type || "audio/webm" });
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("language", "auto");
+
+      const response = await fetch("/api/speech/transcribe", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await response.json().catch(() => null) as { transcript?: string; error?: string } | null;
+      if (!response.ok || !data?.transcript) {
+        throw new Error(data?.error || "Failed to transcribe audio");
+      }
+      appendTranscriptToInput(data.transcript);
+    } catch (error) {
+      setSpeechError(error instanceof Error ? error.message : "Failed to transcribe audio");
+    } finally {
+      setIsTranscribing(false);
+    }
+  }, [appendTranscriptToInput]);
+
+  const startRecording = useCallback(async () => {
+    if (disabled || isLoading || isRecording || isTranscribing) return;
+    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setSpeechError("Voice input is not supported by this browser.");
+      return;
+    }
+
+    setSpeechError(null);
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioStreamRef.current = stream;
+    audioChunksRef.current = [];
+
+    const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
+      ? "audio/webm;codecs=opus"
+      : MediaRecorder.isTypeSupported("audio/ogg;codecs=opus")
+        ? "audio/ogg;codecs=opus"
+        : "";
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    mediaRecorderRef.current = recorder;
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) audioChunksRef.current.push(event.data);
+    };
+    recorder.onstop = () => {
+      const blob = new Blob(audioChunksRef.current, { type: recorder.mimeType || "audio/webm" });
+      audioChunksRef.current = [];
+      stopAudioTracks();
+      if (blob.size > 0) void transcribeRecording(blob);
+    };
+    recorder.start();
+    setIsRecording(true);
+  }, [disabled, isLoading, isRecording, isTranscribing, stopAudioTracks, transcribeRecording]);
+
+  const stopRecording = useCallback(() => {
+    const recorder = mediaRecorderRef.current;
+    if (recorder && recorder.state !== "inactive") {
+      recorder.stop();
+    } else {
+      stopAudioTracks();
+    }
+    setIsRecording(false);
+  }, [stopAudioTracks]);
+
+  const toggleRecording = useCallback(() => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      void startRecording().catch((error) => {
+        stopAudioTracks();
+        setIsRecording(false);
+        setSpeechError(error instanceof Error ? error.message : "Failed to start recording");
+      });
+    }
+  }, [isRecording, startRecording, stopAudioTracks, stopRecording]);
+
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        mediaRecorderRef.current.stop();
+      }
+      stopAudioTracks();
+    };
+  }, [stopAudioTracks]);
+
   const removeUploadedFile = useCallback(
     async (filename: string) => {
       if (!chatId) return;
@@ -361,6 +479,23 @@ export function ChatInput({
               <Paperclip className="size-4" />
             </Button>
 
+            <Button
+              variant={isRecording ? "destructive" : "ghost"}
+              size="icon"
+              onClick={toggleRecording}
+              disabled={disabled || isLoading || isTranscribing}
+              className="h-10 w-10 shrink-0 rounded-xl text-muted-foreground hover:text-foreground disabled:opacity-50"
+              title={isRecording ? "Stop dictation" : "Dictate with microphone"}
+            >
+              {isTranscribing ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : isRecording ? (
+                <MicOff className="size-4" />
+              ) : (
+                <Mic className="size-4" />
+              )}
+            </Button>
+
             <div className="relative flex-1">
             <textarea
               ref={textareaRef}
@@ -396,6 +531,11 @@ export function ChatInput({
             )}
           </div>
         </div>
+        {(isRecording || isTranscribing || speechError) && (
+          <div className={`mt-2 text-center text-xs ${speechError ? "text-destructive" : "text-muted-foreground"}`}>
+            {speechError || (isRecording ? "Recording… press the microphone again to transcribe." : "Transcribing audio locally…")}
+          </div>
+        )}
         <div className="mt-2 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
           <span className="font-mono">{formatModelName(runtimeStats)}</span>
           <span className="font-mono">in {formatTokenCount(runtimeStats?.session?.input ?? runtimeStats?.lastTurn?.input)}</span>

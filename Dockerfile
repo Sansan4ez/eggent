@@ -11,6 +11,20 @@ WORKDIR /app
 COPY . .
 RUN npm run build
 
+FROM node:22-bookworm-slim AS whisper
+WORKDIR /tmp/whisper.cpp
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    build-essential \
+    ca-certificates \
+    cmake \
+    git \
+  && git clone --depth 1 https://github.com/ggerganov/whisper.cpp.git /tmp/whisper.cpp \
+  && cmake -S /tmp/whisper.cpp -B /tmp/whisper.cpp/build -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON \
+  && cmake --build /tmp/whisper.cpp/build --config Release -j"$(nproc)" \
+  && cp /tmp/whisper.cpp/build/bin/whisper-cli /usr/local/bin/whisper-cli \
+  && rm -rf /var/lib/apt/lists/* /tmp/whisper.cpp
+
 FROM node:22-bookworm-slim AS runner
 WORKDIR /app
 ENV NODE_ENV=production
@@ -31,8 +45,10 @@ RUN apt-get update \
     bash \
     ca-certificates \
     curl \
+    ffmpeg \
     git \
     jq \
+    libgomp1 \
     libasound2 \
     libatk1.0-0 \
     libatspi2.0-0 \
@@ -69,8 +85,9 @@ COPY --from=builder /app/next.config.mjs ./next.config.mjs
 COPY --from=builder /app/bundled-skills ./bundled-skills
 COPY --from=builder /app/scripts/docker-entrypoint.sh ./scripts/docker-entrypoint.sh
 COPY --from=builder /app/scripts/ensure-pi-packages.mjs ./scripts/ensure-pi-packages.mjs
+COPY --from=whisper /usr/local/bin/whisper-cli /usr/local/bin/whisper-cli
 
-RUN mkdir -p /app/data/tmp /app/data/ms-playwright /app/data/npm-cache /app/data/.cache \
+RUN mkdir -p /app/data/tmp /app/data/models/whisper /app/data/ms-playwright /app/data/npm-cache /app/data/.cache \
   && chmod +x /app/scripts/docker-entrypoint.sh /app/scripts/ensure-pi-packages.mjs \
   && chown -R node:node /app "${PYTHON_VENV}"
 

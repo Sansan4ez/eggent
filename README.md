@@ -25,6 +25,7 @@ The user-facing product is Eggent. Internally, Eggent uses an agent runtime and 
 - [External API](#external-api)
 - [Other Useful APIs](#other-useful-apis)
 - [Telegram](#telegram)
+- [Local Voice Transcription](#local-voice-transcription)
 - [Pipelines](#pipelines)
 - [Files and Images](#files-and-images)
 - [MCP, Skills, and Models](#mcp-skills-and-models)
@@ -44,7 +45,8 @@ The user-facing product is Eggent. Internally, Eggent uses an agent runtime and 
 - **Chat with context** — upload files, paste screenshots/images, and keep attachments tied to the chat.
 - **Pipelines** — run multiple project agents in sequence with artifact handoff.
 - **External API** — send messages from another service and preserve session/project/chat context between calls.
-- **Telegram bot** — use Eggent from Telegram with formatted responses and progress updates during long runs.
+- **Telegram bot** — use Eggent from Telegram with formatted responses, voice message transcription, and progress updates during long runs.
+- **Local voice input** — dictate in the Eggent chat UI or send Telegram voice messages; transcription runs locally via whisper.cpp.
 - **Docker friendly** — optional `.env`, persistent volume, safe localhost bind by default.
 - **Credentials in UI** — provider keys can be configured during onboarding/settings; `.env` is optional.
 
@@ -519,6 +521,8 @@ Supported commands:
 
 Telegram replies use safe HTML formatting for common Markdown patterns such as bold text, inline code, code blocks, and links. Long runs send typing actions and sparse progress messages so the bot does not feel stuck.
 
+Voice messages are downloaded, saved into the active chat files, transcribed locally, and then sent into the same Eggent chat as a normal user message.
+
 Configure in the UI or via env:
 
 ```env
@@ -527,6 +531,45 @@ TELEGRAM_WEBHOOK_SECRET=
 TELEGRAM_DEFAULT_PROJECT_ID=
 APP_BASE_URL=https://your-domain.example
 ```
+
+---
+
+## Local Voice Transcription
+
+Eggent supports voice without external speech APIs.
+
+Flow:
+
+```text
+Telegram voice / browser microphone
+  -> save audio locally
+  -> ffmpeg normalization
+  -> local whisper.cpp transcription
+  -> transcript becomes a normal Eggent message
+```
+
+Docker builds include `ffmpeg` and `whisper-cli`. The model is stored locally under:
+
+```text
+data/models/whisper/
+```
+
+By default Eggent uses `base` and downloads `ggml-base.bin` on first transcription if it is missing. This download is only for the model file; inference runs locally.
+
+Useful env vars:
+
+```env
+EGGENT_STT_ENABLED=1
+EGGENT_STT_MODEL=base
+EGGENT_STT_LANGUAGE=auto
+EGGENT_STT_AUTO_DOWNLOAD_MODEL=1
+EGGENT_STT_KEEP_AUDIO=0
+# EGGENT_STT_MODEL_PATH=/app/data/models/whisper/ggml-base.bin
+# EGGENT_STT_BINARY=whisper-cli
+# EGGENT_FFMPEG_BINARY=ffmpeg
+```
+
+For local non-Docker development, install `ffmpeg` and `whisper.cpp`, or set `EGGENT_STT_BINARY` to your `whisper-cli` path.
 
 ---
 
@@ -623,6 +666,10 @@ See `.env.example` for the full list.
 | `TELEGRAM_BOT_TOKEN` | unset | Telegram bot token. |
 | `TELEGRAM_WEBHOOK_SECRET` | unset | Optional Telegram webhook secret. |
 | `TELEGRAM_DEFAULT_PROJECT_ID` | unset | Default project for Telegram. |
+| `EGGENT_STT_ENABLED` | `1` | Enable local speech transcription. |
+| `EGGENT_STT_MODEL` | `base` | whisper.cpp ggml model name: `tiny`, `base`, `small`, `medium`. |
+| `EGGENT_STT_AUTO_DOWNLOAD_MODEL` | `1` | Download missing ggml model on first use. |
+| `EGGENT_STT_KEEP_AUDIO` | `0` | Keep temporary normalized audio/transcript files. |
 | `PI_CODING_AGENT_DIR` | Docker: `/app/data/pi-agent` | Runtime config directory. |
 | `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`, `OPENROUTER_API_KEY` | unset | Optional provider fallback keys. |
 
