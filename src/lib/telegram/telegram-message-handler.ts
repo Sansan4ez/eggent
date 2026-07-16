@@ -30,6 +30,12 @@ import crypto from "node:crypto";
 
 const TELEGRAM_TEXT_LIMIT = 4096;
 const TELEGRAM_FILE_MAX_BYTES = 30 * 1024 * 1024;
+const TELEGRAM_TYPING_INTERVAL_MS = 4000;
+const TELEGRAM_PROGRESS_MESSAGES: Array<{ delayMs: number; text: string }> = [
+    { delayMs: 12_000, text: "⏳ Я работаю над ответом…" },
+    { delayMs: 35_000, text: "🔧 Всё ещё выполняю задачу. Это может занять немного времени." },
+    { delayMs: 75_000, text: "🧠 Продолжаю работать — не завис, просто задача длинная." },
+];
 
 export interface TelegramUpdate {
     update_id?: unknown;
@@ -435,6 +441,55 @@ function normalizeOutgoingText(text: string): string {
     return `${value.slice(0, TELEGRAM_TEXT_LIMIT - 1)}…`;
 }
 
+export async function sendTelegramChatAction(
+    botToken: string,
+    chatId: number | string,
+    action: "typing" | "upload_document" = "typing"
+): Promise<void> {
+    await callTelegramApi(botToken, "sendChatAction", {
+        chat_id: chatId,
+        action,
+    });
+}
+
+function startTelegramProgressNotifier(params: {
+    botToken: string;
+    chatId: number | string;
+    replyToMessageId?: number;
+}): () => void {
+    let stopped = false;
+    const timers: NodeJS.Timeout[] = [];
+
+    const safeSendChatAction = () => {
+        if (stopped) return;
+        void sendTelegramChatAction(params.botToken, params.chatId).catch((error) => {
+            console.warn("[Telegram] Failed to send chat action:", error);
+        });
+    };
+
+    safeSendChatAction();
+    timers.push(setInterval(safeSendChatAction, TELEGRAM_TYPING_INTERVAL_MS));
+
+    for (const progress of TELEGRAM_PROGRESS_MESSAGES) {
+        timers.push(setTimeout(() => {
+            if (stopped) return;
+            void sendTelegramMessage(
+                params.botToken,
+                params.chatId,
+                progress.text,
+                params.replyToMessageId
+            ).catch((error) => {
+                console.warn("[Telegram] Failed to send progress message:", error);
+            });
+        }, progress.delayMs));
+    }
+
+    return () => {
+        stopped = true;
+        for (const timer of timers) clearTimeout(timer);
+    };
+}
+
 export async function sendTelegramMessage(
     botToken: string,
     chatId: number | string,
@@ -673,6 +728,12 @@ export async function processTelegramUpdate(
             return { ok: true, ignored: true, reason: "non_text" };
         }
 
+        const stopProgressNotifier = startTelegramProgressNotifier({
+            botToken,
+            chatId,
+            replyToMessageId: messageId,
+        });
+
         try {
             const result = await handleExternalMessage({
                 sessionId,
@@ -691,9 +752,11 @@ export async function processTelegramUpdate(
                 },
             });
 
+            stopProgressNotifier();
             await sendTelegramMessage(botToken, chatId, result.reply, messageId);
             return { ok: true };
         } catch (error) {
+            stopProgressNotifier();
             if (error instanceof ExternalMessageError) {
                 const errorMessage =
                     typeof error.payload.error === "string"
