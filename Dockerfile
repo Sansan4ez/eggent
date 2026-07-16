@@ -23,6 +23,7 @@ RUN apt-get update \
   && cmake -S /tmp/whisper.cpp -B /tmp/whisper.cpp/build -DCMAKE_BUILD_TYPE=Release -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_EXAMPLES=ON \
   && cmake --build /tmp/whisper.cpp/build --config Release -j"$(nproc)" \
   && cp /tmp/whisper.cpp/build/bin/whisper-cli /usr/local/bin/whisper-cli \
+  && find /tmp/whisper.cpp/build -name '*.so*' -exec cp -P {} /usr/local/lib/ \; \
   && rm -rf /var/lib/apt/lists/* /tmp/whisper.cpp
 
 FROM node:22-bookworm-slim AS runner
@@ -31,6 +32,7 @@ ENV NODE_ENV=production
 ENV NEXT_TELEMETRY_DISABLED=1
 ENV PYTHON_VENV=/opt/eggent-python
 ENV PATH="${PYTHON_VENV}/bin:${PATH}"
+ENV LD_LIBRARY_PATH=/usr/local/lib
 ENV PIP_DISABLE_PIP_VERSION_CHECK=1
 ENV PIP_NO_CACHE_DIR=1
 ENV TMPDIR=/app/data/tmp
@@ -86,6 +88,7 @@ COPY --from=builder /app/bundled-skills ./bundled-skills
 COPY --from=builder /app/scripts/docker-entrypoint.sh ./scripts/docker-entrypoint.sh
 COPY --from=builder /app/scripts/ensure-pi-packages.mjs ./scripts/ensure-pi-packages.mjs
 COPY --from=whisper /usr/local/bin/whisper-cli /usr/local/bin/whisper-cli
+COPY --from=whisper /usr/local/lib/ /usr/local/lib/
 
 RUN mkdir -p /app/data/tmp /app/data/models/whisper /app/data/ms-playwright /app/data/npm-cache /app/data/.cache \
   && chmod +x /app/scripts/docker-entrypoint.sh /app/scripts/ensure-pi-packages.mjs \
