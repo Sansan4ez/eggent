@@ -51,6 +51,34 @@ function isImageFile(file: File): boolean {
   return file.type.startsWith("image/");
 }
 
+function getVoiceInputUnavailableMessage(): string | null {
+  if (typeof window !== "undefined" && !window.isSecureContext) {
+    return "Voice input requires HTTPS. Open Eggent via a secure domain or use localhost; browsers block microphone access on public HTTP addresses.";
+  }
+  if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia) {
+    return "Voice input is not supported by this browser.";
+  }
+  if (typeof MediaRecorder === "undefined") {
+    return "Audio recording is not supported by this browser.";
+  }
+  return null;
+}
+
+function getVoiceInputErrorMessage(error: unknown): string {
+  if (error instanceof DOMException) {
+    if (error.name === "NotAllowedError" || error.name === "SecurityError") {
+      return "Microphone access was blocked. Allow microphone permissions and make sure Eggent is opened over HTTPS.";
+    }
+    if (error.name === "NotFoundError" || error.name === "DevicesNotFoundError") {
+      return "No microphone was found on this device.";
+    }
+    if (error.name === "NotReadableError" || error.name === "TrackStartError") {
+      return "The microphone is already in use by another app or cannot be read.";
+    }
+  }
+  return error instanceof Error ? error.message : "Failed to start recording";
+}
+
 interface ChatInputProps {
   input: string;
   setInput: (input: string) => void;
@@ -312,13 +340,20 @@ export function ChatInput({
 
   const startRecording = useCallback(async () => {
     if (disabled || isLoading || isRecording || isTranscribing) return;
-    if (typeof navigator === "undefined" || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
-      setSpeechError("Voice input is not supported by this browser.");
+    const unavailableMessage = getVoiceInputUnavailableMessage();
+    if (unavailableMessage) {
+      setSpeechError(unavailableMessage);
       return;
     }
 
     setSpeechError(null);
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    } catch (error) {
+      setSpeechError(getVoiceInputErrorMessage(error));
+      return;
+    }
     audioStreamRef.current = stream;
     audioChunksRef.current = [];
 
@@ -359,7 +394,7 @@ export function ChatInput({
       void startRecording().catch((error) => {
         stopAudioTracks();
         setIsRecording(false);
-        setSpeechError(error instanceof Error ? error.message : "Failed to start recording");
+        setSpeechError(getVoiceInputErrorMessage(error));
       });
     }
   }, [isRecording, startRecording, stopAudioTracks, stopRecording]);
