@@ -656,6 +656,8 @@ export function ChatPanel() {
         onStop={stop}
         isLoading={isLoading}
         chatId={activeChatId || internalChatId}
+        projectId={activeProjectId}
+        currentPath={currentPath}
         focusSignal={inputFocusSignal}
         runtimeStats={displayRuntimeStats}
       />

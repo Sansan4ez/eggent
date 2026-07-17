@@ -1,7 +1,7 @@
 "use client";
 
-import { useRef, useCallback, useState, useEffect } from "react";
-import { Send, Square, Paperclip, X, FileIcon, ImageIcon, Mic, MicOff, Loader2 } from "lucide-react";
+import { useRef, useCallback, useState, useEffect, useMemo } from "react";
+import { Send, Square, Paperclip, X, FileIcon, ImageIcon, Mic, MicOff, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type { ChatFile } from "@/lib/types";
 import type { PiRuntimeStats } from "@/lib/pi/types";
@@ -79,6 +79,16 @@ function getVoiceInputErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Failed to start recording";
 }
 
+interface SlashCommand {
+  name: string;
+  title?: string;
+  description?: string;
+  argumentHint?: string;
+  source: "skill" | "prompt" | string;
+  location?: string;
+  path?: string;
+}
+
 interface ChatInputProps {
   input: string;
   setInput: (input: string) => void;
@@ -87,6 +97,8 @@ interface ChatInputProps {
   isLoading: boolean;
   disabled?: boolean;
   chatId?: string;
+  projectId?: string | null;
+  currentPath?: string;
   onFilesUploaded?: (files: ChatFile[]) => void;
   focusSignal?: number;
   runtimeStats?: PiRuntimeStats | null;
@@ -102,6 +114,8 @@ export function ChatInput({
   isLoading,
   disabled,
   chatId,
+  projectId,
+  currentPath,
   onFilesUploaded,
   focusSignal,
   runtimeStats,
@@ -118,6 +132,9 @@ export function ChatInput({
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [speechError, setSpeechError] = useState<string | null>(null);
+  const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
+  const [slashCommandsLoading, setSlashCommandsLoading] = useState(false);
+  const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
 
   // Load chat files when chatId changes
   useEffect(() => {
@@ -149,8 +166,76 @@ export function ChatInput({
   }, [chatId]);
 
   useEffect(() => {
+    let cancelled = false;
+    const params = new URLSearchParams();
+    if (projectId) params.set("projectId", projectId);
+    if (currentPath) params.set("currentPath", currentPath);
+    setSlashCommandsLoading(true);
+    fetch(`/api/pi-commands?${params.toString()}`, { cache: "no-store" })
+      .then((res) => {
+        if (!res.ok) throw new Error("Failed to load commands");
+        return res.json() as Promise<{ commands?: SlashCommand[] }>;
+      })
+      .then((data) => {
+        if (!cancelled) setSlashCommands(Array.isArray(data.commands) ? data.commands : []);
+      })
+      .catch(() => {
+        if (!cancelled) setSlashCommands([]);
+      })
+      .finally(() => {
+        if (!cancelled) setSlashCommandsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId, currentPath]);
+
+  useEffect(() => {
     latestInputRef.current = input;
   }, [input]);
+
+  const slashQuery = useMemo(() => {
+    if (!input.startsWith("/")) return null;
+    if (input.includes("\n")) return null;
+    const afterSlash = input.slice(1);
+    if (/\s/.test(afterSlash)) return null;
+    return afterSlash.toLowerCase();
+  }, [input]);
+
+  const filteredSlashCommands = useMemo(() => {
+    if (slashQuery === null) return [];
+    const query = slashQuery;
+    return slashCommands
+      .filter((command) => {
+        const haystack = [
+          command.name,
+          command.title,
+          command.description,
+          command.source,
+        ].filter(Boolean).join(" ").toLowerCase();
+        return !query || command.name.toLowerCase().startsWith(query) || haystack.includes(query);
+      })
+      .slice(0, 8);
+  }, [slashCommands, slashQuery]);
+
+  const showSlashMenu = slashQuery !== null && (filteredSlashCommands.length > 0 || slashCommandsLoading);
+
+  useEffect(() => {
+    setSelectedCommandIndex(0);
+  }, [slashQuery, filteredSlashCommands.length]);
+
+  const applySlashCommand = useCallback((command: SlashCommand) => {
+    const commandText = `/${command.name} `;
+    setInput(commandText);
+    requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.focus();
+      textarea.setSelectionRange(commandText.length, commandText.length);
+      textarea.style.height = "auto";
+      textarea.style.height = Math.min(textarea.scrollHeight, 200) + "px";
+    });
+  }, [setInput]);
 
   const canSubmit = Boolean(input.trim()) || uploadedFiles.length > 0;
   const submitCurrentMessage = useCallback(() => {
@@ -160,12 +245,42 @@ export function ChatInput({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
+      if (showSlashMenu && filteredSlashCommands.length > 0) {
+        if (e.key === "ArrowDown") {
+          e.preventDefault();
+          setSelectedCommandIndex((index) => (index + 1) % filteredSlashCommands.length);
+          return;
+        }
+        if (e.key === "ArrowUp") {
+          e.preventDefault();
+          setSelectedCommandIndex((index) => (index - 1 + filteredSlashCommands.length) % filteredSlashCommands.length);
+          return;
+        }
+        if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+          e.preventDefault();
+          applySlashCommand(filteredSlashCommands[selectedCommandIndex] || filteredSlashCommands[0]);
+          return;
+        }
+        if (e.key === "Escape") {
+          e.preventDefault();
+          setInput("");
+          return;
+        }
+      }
+
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
         submitCurrentMessage();
       }
     },
-    [submitCurrentMessage]
+    [
+      showSlashMenu,
+      filteredSlashCommands,
+      selectedCommandIndex,
+      applySlashCommand,
+      setInput,
+      submitCurrentMessage,
+    ]
   );
 
   const handleInput = useCallback(
@@ -493,6 +608,58 @@ export function ChatInput({
         )}
 
         <div className="relative">
+          {showSlashMenu && (
+            <div className="absolute bottom-full left-0 right-0 z-30 mb-2 overflow-hidden rounded-2xl border bg-popover text-popover-foreground shadow-xl">
+              <div className="border-b px-3 py-2 text-xs font-medium text-muted-foreground">
+                {slashCommandsLoading ? "Loading commands…" : "Slash commands"}
+              </div>
+              {filteredSlashCommands.length > 0 ? (
+                <div className="max-h-72 overflow-y-auto py-1">
+                  {filteredSlashCommands.map((command, index) => {
+                    const selected = index === selectedCommandIndex;
+                    const isSkill = command.source === "skill";
+                    return (
+                      <button
+                        key={`${command.source}:${command.name}:${command.path || index}`}
+                        type="button"
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                          applySlashCommand(command);
+                        }}
+                        className={`flex w-full items-start gap-3 px-3 py-2 text-left text-sm transition-colors ${selected ? "bg-accent text-accent-foreground" : "hover:bg-accent/60"}`}
+                      >
+                        <span className={`mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md border ${isSkill ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+                          <Sparkles className="size-3.5" />
+                        </span>
+                        <span className="min-w-0 flex-1">
+                          <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                            <code className="font-mono text-xs">/{command.name}</code>
+                            {command.argumentHint && (
+                              <span className="font-mono text-[11px] text-muted-foreground">{command.argumentHint}</span>
+                            )}
+                            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] uppercase tracking-wide text-muted-foreground">
+                              {isSkill ? "Skill" : "Prompt"}
+                            </span>
+                          </span>
+                          {command.description && (
+                            <span className="mt-1 line-clamp-2 block text-xs text-muted-foreground">
+                              {command.description}
+                            </span>
+                          )}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="px-3 py-3 text-sm text-muted-foreground">No matching commands.</div>
+              )}
+              <div className="border-t px-3 py-1.5 text-[11px] text-muted-foreground">
+                ↑/↓ select · Enter/Tab insert · then send normally
+              </div>
+            </div>
+          )}
+
           {/* File upload button */}
           <input
             ref={fileInputRef}

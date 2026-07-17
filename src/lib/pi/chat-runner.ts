@@ -238,7 +238,14 @@ function applySchedulingToolPolicy(
   }
 }
 
-function withSchedulingDirective(text: string): string {
+function isSlashCommand(text: string): boolean {
+  return text.trimStart().startsWith("/");
+}
+
+function preparePromptForRuntime(text: string): string {
+  // Runtime slash commands such as /skill:name and prompt templates must stay
+  // at the very beginning of the message so the SDK can expand them.
+  if (isSlashCommand(text)) return text;
   if (hasScheduleManagementIntent(text)) {
     return [
       "Eggent schedule-management directive:",
@@ -408,7 +415,7 @@ export async function runPiAgentText(options: PiChatRunOptions & { runtimeData?:
 
   try {
     applySchedulingToolPolicy(session, prompt);
-    await session.prompt(withSchedulingDirective(prompt));
+    await session.prompt(preparePromptForRuntime(prompt));
     currentPromptUsage = currentPromptUsage ?? subtractUsage(getSessionTokenUsage(session), baselineUsage);
     lastTurnUsage = lastTurnUsage ?? currentPromptUsage;
     await persistAssistantMessage({
@@ -554,7 +561,7 @@ export function createPiChatUIMessageStream(options: PiChatRunOptions) {
 
       try {
         applySchedulingToolPolicy(session, options.userMessage);
-        await session.prompt(withSchedulingDirective(options.userMessage));
+        await session.prompt(preparePromptForRuntime(options.userMessage));
         currentPromptUsage = currentPromptUsage ?? subtractUsage(getSessionTokenUsage(session), baselineUsage);
         lastTurnUsage = lastTurnUsage ?? currentPromptUsage;
         const finalStats = buildPiRuntimeStats(session, currentPromptUsage, addUsage(baselineUsage, currentPromptUsage));
