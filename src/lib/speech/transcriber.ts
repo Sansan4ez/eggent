@@ -151,6 +151,12 @@ function normalizeTranscript(text: string): string {
     .trim();
 }
 
+function normalizeLanguage(value?: string): string {
+  const language = value?.trim().toLowerCase() || "auto";
+  if (["", "detect", "detected", "auto-detect", "autodetect"].includes(language)) return "auto";
+  return language;
+}
+
 async function normalizeAudio(inputPath: string, outputPath: string): Promise<void> {
   const ffmpeg = await getFfmpegBinary();
   const timeout = Number(process.env.EGGENT_STT_FFMPEG_TIMEOUT_MS || 120_000);
@@ -173,17 +179,19 @@ async function runWhisper(params: {
 }): Promise<string> {
   const whisper = await getWhisperBinary();
   const timeout = Number(process.env.EGGENT_STT_TIMEOUT_MS || 300_000);
+  const language = normalizeLanguage(params.language);
   const args = [
     "-m", params.modelPath,
     "-f", params.wavPath,
     "-otxt",
     "-of", params.outputPrefix,
     "-nt",
+    // Be explicit. whisper.cpp commonly defaults to English when -l is
+    // omitted; for non-English speech that can produce English output. `auto`
+    // keeps transcription in the detected original language and does not enable
+    // translation.
+    "-l", language,
   ];
-
-  if (params.language && params.language !== "auto") {
-    args.push("-l", params.language);
-  }
 
   await execFileAsync(whisper, args, { timeout, maxBuffer: 16 * 1024 * 1024 });
   const transcriptPath = `${params.outputPrefix}.txt`;
@@ -213,7 +221,7 @@ export async function transcribeAudioBuffer(params: {
   const wavPath = path.join(SPEECH_TMP_DIR, `${id}.wav`);
   const outputPrefix = path.join(SPEECH_TMP_DIR, `${id}`);
   const keepAudio = envFlag("EGGENT_STT_KEEP_AUDIO", false);
-  const language = params.language?.trim() || process.env.EGGENT_STT_LANGUAGE?.trim() || "auto";
+  const language = normalizeLanguage(params.language || process.env.EGGENT_STT_LANGUAGE);
 
   try {
     const modelPath = await ensureModel();
