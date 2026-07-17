@@ -122,6 +122,8 @@ export function ChatInput({
 }: ChatInputProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const slashMenuRef = useRef<HTMLDivElement>(null);
+  const slashCommandItemRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const audioStreamRef = useRef<MediaStream | null>(null);
@@ -135,6 +137,7 @@ export function ChatInput({
   const [slashCommands, setSlashCommands] = useState<SlashCommand[]>([]);
   const [slashCommandsLoading, setSlashCommandsLoading] = useState(false);
   const [selectedCommandIndex, setSelectedCommandIndex] = useState(0);
+  const [slashMenuDismissed, setSlashMenuDismissed] = useState(false);
 
   // Load chat files when chatId changes
   useEffect(() => {
@@ -218,11 +221,34 @@ export function ChatInput({
       .slice(0, 8);
   }, [slashCommands, slashQuery]);
 
-  const showSlashMenu = slashQuery !== null && (filteredSlashCommands.length > 0 || slashCommandsLoading);
+  const showSlashMenu = !slashMenuDismissed && slashQuery !== null && (filteredSlashCommands.length > 0 || slashCommandsLoading);
 
   useEffect(() => {
+    setSlashMenuDismissed(false);
     setSelectedCommandIndex(0);
   }, [slashQuery, filteredSlashCommands.length]);
+
+  useEffect(() => {
+    slashCommandItemRefs.current.length = filteredSlashCommands.length;
+  }, [filteredSlashCommands.length]);
+
+  useEffect(() => {
+    if (!showSlashMenu) return;
+    const selectedItem = slashCommandItemRefs.current[selectedCommandIndex];
+    selectedItem?.scrollIntoView({ block: "nearest" });
+  }, [showSlashMenu, selectedCommandIndex]);
+
+  useEffect(() => {
+    if (!showSlashMenu) return;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) return;
+      if (slashMenuRef.current?.contains(target)) return;
+      setSlashMenuDismissed(true);
+    };
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    return () => document.removeEventListener("pointerdown", handlePointerDown, true);
+  }, [showSlashMenu]);
 
   const applySlashCommand = useCallback((command: SlashCommand) => {
     const commandText = `/${command.name} `;
@@ -609,7 +635,10 @@ export function ChatInput({
 
         <div className="relative">
           {showSlashMenu && (
-            <div className="absolute bottom-full left-0 right-0 z-30 mb-2 overflow-hidden rounded-2xl border bg-popover text-popover-foreground shadow-xl">
+            <div
+              ref={slashMenuRef}
+              className="absolute bottom-full left-0 right-0 z-30 mb-2 overflow-hidden rounded-2xl border bg-popover text-popover-foreground shadow-xl"
+            >
               <div className="border-b px-3 py-2 text-xs font-medium text-muted-foreground">
                 {slashCommandsLoading ? "Loading commands…" : "Slash commands"}
               </div>
@@ -621,6 +650,9 @@ export function ChatInput({
                     return (
                       <button
                         key={`${command.source}:${command.name}:${command.path || index}`}
+                        ref={(node) => {
+                          slashCommandItemRefs.current[index] = node;
+                        }}
                         type="button"
                         onMouseDown={(event) => {
                           event.preventDefault();
