@@ -13,6 +13,8 @@ interface ExternalMessageBody {
   projectName?: unknown;
   chatId?: unknown;
   currentPath?: unknown;
+  runtimeData?: unknown;
+  publicMode?: unknown;
 }
 
 function parseBearerToken(req: NextRequest): string | null {
@@ -81,6 +83,11 @@ export async function POST(req: NextRequest) {
       chatId: typeof body.chatId === "string" ? body.chatId : undefined,
       currentPath:
         typeof body.currentPath === "string" ? body.currentPath : undefined,
+      runtimeData:
+        body.runtimeData && typeof body.runtimeData === "object" && !Array.isArray(body.runtimeData)
+          ? body.runtimeData as Record<string, unknown>
+          : undefined,
+      publicMode: body.publicMode === true,
     });
 
     return Response.json(result);

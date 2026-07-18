@@ -17,6 +17,7 @@ export interface HandleExternalMessageInput {
   chatId?: string;
   currentPath?: string;
   runtimeData?: Record<string, unknown>;
+  publicMode?: boolean;
 }
 
 interface SwitchProjectSignal {
@@ -202,7 +203,7 @@ export async function handleExternalMessage(
   const explicitProjectRef = explicitProjectId || explicitProjectName;
   const explicitChatId = input.chatId?.trim() ?? "";
   const explicitCurrentPath =
-    typeof input.currentPath === "string" ? input.currentPath : undefined;
+    typeof input.currentPath === "string" && !input.publicMode ? input.currentPath : undefined;
 
   if (!sessionId) {
     throw new ExternalMessageError(400, { error: "sessionId is required" });
@@ -287,12 +288,23 @@ export async function handleExternalMessage(
   const beforeChat = await getChat(resolvedChatId);
   const beforeCount = beforeChat?.messages.length ?? 0;
 
+  const runtimeData = input.publicMode
+    ? {
+        ...(input.runtimeData || {}),
+        publicMode: true,
+        lockedProjectId: resolvedProjectId || null,
+        instructions:
+          "This is a public shared project chat. Stay within the locked project. Do not switch projects, create projects, list other projects, or reveal unrelated workspace details.",
+      }
+    : input.runtimeData;
+
   const reply = await runPiAgentText({
     chatId: resolvedChatId,
     userMessage: message,
     projectId: resolvedProjectId,
     cwd: currentPath || undefined,
-    runtimeData: input.runtimeData,
+    runtimeData,
+    enableEggentTools: input.publicMode ? false : undefined,
   });
 
   const afterChat = await getChat(resolvedChatId);
@@ -300,7 +312,7 @@ export async function handleExternalMessage(
 
   let switchSignal: SwitchProjectSignal | null = null;
   let createSignal: CreateProjectSignal | null = null;
-  for (let i = newMessages.length - 1; i >= 0; i -= 1) {
+  for (let i = newMessages.length - 1; !input.publicMode && i >= 0; i -= 1) {
     if (!switchSignal) {
       const parsedSwitch = parseSwitchProjectSignal(newMessages[i]);
       if (parsedSwitch) {
