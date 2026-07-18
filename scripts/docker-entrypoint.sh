@@ -35,17 +35,18 @@ RUNTIME_DIRS=(
   "${XDG_CACHE_HOME:-/app/data/.cache}"
 )
 
-# Do not hide failures here: continuing with an unwritable bind mount only
+# Do not hide mkdir failures here: continuing with missing runtime dirs only
 # produces a less useful EACCES error later in ensure-pi-packages.mjs.
 sudo mkdir -p "$DATA_ROOT" "${RUNTIME_DIRS[@]}"
-# Fix the whole data tree, not just the root directory. Existing self-hosted or
-# cloud instances may already contain root-owned settings/, auth files, project
-# files, or generated tokens from earlier container versions.
-sudo chown -R node:node "$DATA_ROOT"
-sudo chmod u+rwX "$DATA_ROOT"
+# Fix the data tree, but tolerate read-only bind mounts under /app/data.
+# Commercial shared folders are intentionally mounted read-only by default
+# (for example /app/data/projects/.shared/<folder>), and chown on those paths
+# returns "Read-only file system". That must not make the container restart-loop.
+sudo chown -R node:node "$DATA_ROOT" >/tmp/eggent-data-chown.log 2>&1 || true
+sudo chmod u+rwX "$DATA_ROOT" >/dev/null 2>&1 || true
 for dir in "${RUNTIME_DIRS[@]}"; do
-  sudo chown -R node:node "$dir"
-  sudo chmod u+rwX "$dir"
+  sudo chown -R node:node "$dir" >/dev/null 2>&1 || true
+  sudo chmod u+rwX "$dir" >/dev/null 2>&1 || true
 done
 
 fix_auth_dir "/app/data/.codex"
