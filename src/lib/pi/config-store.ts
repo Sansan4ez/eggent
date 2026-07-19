@@ -2,9 +2,12 @@ import "@/lib/pi/env";
 import fs from "fs/promises";
 import path from "path";
 import * as PiSdk from "@earendil-works/pi-coding-agent";
-import type { AuthStorage, ModelRegistry, SettingsManager } from "@earendil-works/pi-coding-agent";
+import type { ModelRegistry, ModelRuntime, SettingsManager } from "@earendil-works/pi-coding-agent";
 import type { PiRuntimeStats } from "@/lib/pi/types";
 import { getWorkDir, loadProjectModelSettings } from "@/lib/storage/project-store";
+
+type StoredCredentialInfo = { providerId: string; type: string };
+type StoredCredentialRecord = { type: string; key?: string; env?: Record<string, string> };
 
 function getPiSdkExport<T = unknown>(name: string): T {
   const sdk = PiSdk as unknown as Record<string, unknown> & { default?: Record<string, unknown> };
@@ -24,24 +27,58 @@ export function getPiAgentDir(): string {
   return process.env.PI_CODING_AGENT_DIR?.trim() || path.join(process.cwd(), "data", "pi-agent");
 }
 
-export function getPiAuthStorage(): AuthStorage {
-  const AuthStorage = getPiSdkExport<{ create?: () => AuthStorage }>("AuthStorage");
-  if (typeof AuthStorage.create !== "function") {
-    throw new Error('Eggent runtime SDK export "AuthStorage.create" is unavailable.');
-  }
-  return AuthStorage.create();
+export function getPiAuthPath(): string {
+  return path.join(getPiAgentDir(), "auth.json");
 }
 
 export function getPiModelsPath(): string {
   return path.join(getPiAgentDir(), "models.json");
 }
 
-export function getPiModelRegistry(authStorage = getPiAuthStorage()): ModelRegistry {
-  const ModelRegistry = getPiSdkExport<{ create?: (authStorage: AuthStorage, modelsPath: string) => ModelRegistry }>("ModelRegistry");
-  if (typeof ModelRegistry.create !== "function") {
-    throw new Error('Eggent runtime SDK export "ModelRegistry.create" is unavailable.');
+async function readAuthJson(): Promise<Record<string, StoredCredentialRecord>> {
+  try {
+    const content = await fs.readFile(getPiAuthPath(), "utf-8");
+    const parsed = JSON.parse(content) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, StoredCredentialRecord>
+      : {};
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return {};
+    throw error;
   }
-  return ModelRegistry.create(authStorage, getPiModelsPath());
+}
+
+async function writeAuthJson(content: Record<string, StoredCredentialRecord>): Promise<void> {
+  const filePath = getPiAuthPath();
+  await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
+  await fs.writeFile(filePath, `${JSON.stringify(content, null, 2)}\n`, { mode: 0o600 });
+  await fs.chmod(filePath, 0o600).catch(() => undefined);
+}
+
+export async function setPiApiKeyCredential(provider: string, apiKey: string, env?: Record<string, string>): Promise<void> {
+  const auth = await readAuthJson();
+  auth[provider] = env ? { type: "api_key", key: apiKey, env } : { type: "api_key", key: apiKey };
+  await writeAuthJson(auth);
+}
+
+export async function deletePiCredential(provider: string): Promise<void> {
+  const auth = await readAuthJson();
+  delete auth[provider];
+  await writeAuthJson(auth);
+}
+
+export async function getPiModelRuntime(): Promise<ModelRuntime> {
+  const ModelRuntime = getPiSdkExport<{ create?: (options: { authPath: string; modelsPath: string }) => Promise<ModelRuntime> }>("ModelRuntime");
+  if (typeof ModelRuntime.create !== "function") {
+    throw new Error('Eggent runtime SDK export "ModelRuntime.create" is unavailable.');
+  }
+  return ModelRuntime.create({ authPath: getPiAuthPath(), modelsPath: getPiModelsPath() });
+}
+
+export async function getPiModelRegistry(modelRuntime?: ModelRuntime): Promise<ModelRegistry> {
+  const runtime = modelRuntime || await getPiModelRuntime();
+  const ModelRegistry = getPiSdkExport<{ new(runtime: ModelRuntime): ModelRegistry }>("ModelRegistry");
+  return new ModelRegistry(runtime);
 }
 
 export async function readPiModelsJson(): Promise<string> {
@@ -71,11 +108,11 @@ export async function writePiModelsJson(content: string): Promise<string> {
 }
 
 export function getPiSettingsManager(cwd = process.cwd()): SettingsManager {
-  const SettingsManager = getPiSdkExport<{ create?: (cwd: string) => SettingsManager }>("SettingsManager");
+  const SettingsManager = getPiSdkExport<{ create?: (cwd: string, agentDir?: string) => SettingsManager }>("SettingsManager");
   if (typeof SettingsManager.create !== "function") {
     throw new Error('Eggent runtime SDK export "SettingsManager.create" is unavailable.');
   }
-  return SettingsManager.create(cwd);
+  return SettingsManager.create(cwd, getPiAgentDir());
 }
 
 export async function getPiSettingsState(cwd = process.cwd()) {
@@ -106,16 +143,15 @@ export async function updatePiModelDefaults(options: {
     settingsManager.setDefaultModel(model);
   }
   if (options.thinkingLevel?.trim()) {
-    settingsManager.setDefaultThinkingLevel(options.thinkingLevel.trim());
+    settingsManager.setDefaultThinkingLevel(options.thinkingLevel.trim() as never);
   }
   await settingsManager.flush();
   return getPiSettingsState(cwd);
 }
 
 export async function setPiDefaultToFirstAvailableModel(provider?: string, cwd = process.cwd()) {
-  const authStorage = getPiAuthStorage();
-  const modelRegistry = getPiModelRegistry(authStorage);
-  await authStorage.reload();
+  const modelRuntime = await getPiModelRuntime();
+  const modelRegistry = await getPiModelRegistry(modelRuntime);
   await modelRegistry.refresh();
 
   const available = modelRegistry.getAvailable();
@@ -137,10 +173,9 @@ export async function setPiDefaultToFirstAvailableModel(provider?: string, cwd =
 export async function getResolvedPiRuntimeModel(projectId?: string | null): Promise<PiRuntimeStats> {
   const normalizedProjectId = projectId?.trim() && projectId.trim() !== "none" ? projectId.trim() : undefined;
   const cwd = normalizedProjectId ? getWorkDir(normalizedProjectId) : getWorkDir(null);
-  const authStorage = getPiAuthStorage();
-  const modelRegistry = getPiModelRegistry(authStorage);
+  const modelRuntime = await getPiModelRuntime();
+  const modelRegistry = await getPiModelRegistry(modelRuntime);
   const settingsManager = getPiSettingsManager(cwd);
-  await authStorage.reload();
   await modelRegistry.refresh();
 
   const availableModels = modelRegistry.getAvailable();
@@ -178,23 +213,26 @@ export async function getResolvedPiRuntimeModel(projectId?: string | null): Prom
 }
 
 export async function getPiModelsState() {
-  const authStorage = getPiAuthStorage();
-  const modelRegistry = getPiModelRegistry(authStorage);
-  await authStorage.reload();
+  const modelRuntime = await getPiModelRuntime();
+  const modelRegistry = await getPiModelRegistry(modelRuntime);
   await modelRegistry.refresh();
 
-  const [available, storedAuth, settings] = await Promise.all([
-    modelRegistry.getAvailable(),
-    authStorage.getAll(),
+  const [available, storedCredentials, settings] = await Promise.all([
+    Promise.resolve(modelRegistry.getAvailable()),
+    modelRuntime.listCredentials() as Promise<readonly StoredCredentialInfo[]>,
     getPiSettingsState(),
   ]);
+  const storedAuth = Object.fromEntries(storedCredentials.map((credential) => [credential.providerId, credential]));
   const all = modelRegistry.getAll();
+  const providers = modelRuntime.getProviders();
   const providerIds = Array.from(new Set(all.map((model) => model.provider))).sort();
-  const oauthProviders = authStorage.getOAuthProviders().map((provider) => ({
-    id: provider.id,
-    name: provider.name,
-    usesCallbackServer: Boolean(provider.usesCallbackServer),
-  }));
+  const oauthProviders = providers
+    .filter((provider) => Boolean(provider.auth?.oauth))
+    .map((provider) => ({
+      id: provider.id,
+      name: provider.auth?.oauth?.name || provider.name || provider.id,
+      usesCallbackServer: Boolean(provider.auth?.oauth && "callback" in provider.auth.oauth),
+    }));
   const subscriptionOnlyProviderIds = new Set(["openai-codex", "github-copilot"]);
   const serializeModel = (model: (typeof all)[number], isAvailable: boolean) => ({
     provider: model.provider,
@@ -214,7 +252,7 @@ export async function getPiModelsState() {
 
   return {
     agentDir: getPiAgentDir(),
-    authFile: path.join(getPiAgentDir(), "auth.json"),
+    authFile: getPiAuthPath(),
     settings,
     modelsFile: getPiModelsPath(),
     current: currentModel ? {

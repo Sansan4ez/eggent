@@ -18,7 +18,7 @@ import {
   loadProjectModelSettings,
   loadProjectSkillsMetadata,
 } from "@/lib/storage/project-store";
-import { getPiAuthStorage, getPiModelRegistry, getPiSettingsManager } from "@/lib/pi/config-store";
+import { getPiModelRegistry, getPiModelRuntime, getPiSettingsManager } from "@/lib/pi/config-store";
 
 const EGGENT_CONTEXT_FILE_CANDIDATES = [
   "AGENTS.md",
@@ -236,10 +236,9 @@ export async function createEggentPiSession(options: PiSessionOptions = {}) {
   const projectId = normalizeProjectId(options.projectId);
   const cwd = resolveCwd({ ...options, projectId });
   const agentDir = options.agentDir || getAgentDir();
-  const authStorage = getPiAuthStorage();
-  const modelRegistry = getPiModelRegistry(authStorage);
+  const modelRuntime = await getPiModelRuntime();
+  const modelRegistry = await getPiModelRegistry(modelRuntime);
   const settingsManager = getPiSettingsManager(cwd);
-  await authStorage.reload();
   await modelRegistry.refresh();
   const projectModelSettings = projectId ? await loadProjectModelSettings(projectId) : null;
   const availableModels = modelRegistry.getAvailable();
@@ -333,8 +332,7 @@ export async function createEggentPiSession(options: PiSessionOptions = {}) {
     cwd,
     agentDir,
     model: configuredModel,
-    authStorage,
-    modelRegistry,
+    modelRuntime,
     resourceLoader,
     tools: options.tools ? [...options.tools, ...customToolNames] : undefined,
     customTools,

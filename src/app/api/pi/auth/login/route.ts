@@ -1,6 +1,6 @@
 import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { getPiAuthStorage, getPiModelsState, setPiDefaultToFirstAvailableModel } from "@/lib/pi/config-store";
+import { getPiModelRuntime, getPiModelsState, setPiDefaultToFirstAvailableModel } from "@/lib/pi/config-store";
 
 type LoginEvent =
   | { id: string; type: "auth_url"; url: string; instructions?: string; createdAt: number }
@@ -79,11 +79,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "provider is required" }, { status: 400 });
   }
 
-  const authStorage = getPiAuthStorage();
-  await authStorage.reload();
-  const oauthProvider = authStorage.getOAuthProviders().find((item) => item.id === provider);
+  const modelRuntime = await getPiModelRuntime();
+  const oauthProvider = modelRuntime.getProviders().find((item) => item.id === provider && item.auth?.oauth);
   if (!oauthProvider) {
-    return NextResponse.json({ error: `${provider} is not a pi OAuth/subscription provider.` }, { status: 400 });
+    return NextResponse.json({ error: `${provider} is not an Eggent OAuth/subscription provider.` }, { status: 400 });
   }
 
   const now = Date.now();
@@ -101,7 +100,7 @@ export async function POST(req: NextRequest) {
 
   void (async () => {
     try {
-      await authStorage.login(provider, {
+      await modelRuntime.login(provider, "oauth", {
         onAuth: (info) => pushEvent(job, { type: "auth_url", url: info.url, instructions: info.instructions }),
         onDeviceCode: (info) => pushEvent(job, { type: "device_code", ...info }),
         onProgress: (message) => pushEvent(job, { type: "progress", message }),
