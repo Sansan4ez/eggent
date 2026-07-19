@@ -90,6 +90,21 @@ COPY --from=builder /app/scripts/ensure-pi-packages.mjs ./scripts/ensure-pi-pack
 COPY --from=whisper /usr/local/bin/whisper-cli /usr/local/bin/whisper-cli
 COPY --from=whisper /usr/local/lib/ /usr/local/lib/
 
+# Next can emit server sourcemaps for middleware/edge bundles. They are useful
+# for debugging but should not be shipped in enterprise/release images.
+RUN find /app -name node_modules -prune -o -name '*.map' -type f -exec rm -f {} +
+
+# Release hardening guardrails: the runtime image must not contain project
+# source trees, git metadata, env files, or sourcemaps outside node_modules.
+RUN for path in /app/src /app/app /app/components /app/hooks /app/store /app/.git /app/.env /app/.env.example /app/tsconfig.json /app/tsconfig.tsbuildinfo; do \
+      if [ -e "$path" ]; then echo "Forbidden path in runtime image: $path" >&2; exit 1; fi; \
+    done \
+  && if find /app -path /app/node_modules -prune -o -name '*.map' -print -quit | grep -q .; then \
+      echo "Forbidden sourcemap outside node_modules" >&2; \
+      find /app -path /app/node_modules -prune -o -name '*.map' -print | head -20 >&2; \
+      exit 1; \
+    fi
+
 RUN mkdir -p /app/data/tmp /app/data/models/whisper /app/data/ms-playwright /app/data/npm-cache /app/data/.cache \
   && chmod +x /app/scripts/docker-entrypoint.sh /app/scripts/ensure-pi-packages.mjs \
   && chown -R node:node /app/data "${PYTHON_VENV}"

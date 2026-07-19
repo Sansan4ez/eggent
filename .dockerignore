@@ -1,5 +1,7 @@
 .git
 .gitignore
+.env*
+.pi
 .next
 node_modules
 data
