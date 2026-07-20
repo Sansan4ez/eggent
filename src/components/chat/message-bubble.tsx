@@ -16,145 +16,129 @@ function normalizeVisibleText(text: string): string {
   return noInvisible.trim();
 }
 
+function valueToText(value: unknown): string {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value ?? "");
+  } catch {
+    return String(value ?? "");
+  }
+}
+
+function toolPartInfo(part: UIMessage["parts"][number]): {
+  toolName: string;
+  toolCallId?: string;
+  state?: string;
+  input?: unknown;
+  output?: unknown;
+} | null {
+  if (part.type === "dynamic-tool") {
+    return part as {
+      toolName: string;
+      toolCallId?: string;
+      state?: string;
+      input?: unknown;
+      output?: unknown;
+    };
+  }
+
+  if (!part.type.startsWith("tool-")) return null;
+  const typedPart = part as {
+    type: string;
+    toolCallId?: string;
+    state?: string;
+    input?: unknown;
+    output?: unknown;
+  };
+  return {
+    toolName: typedPart.type.replace("tool-", ""),
+    toolCallId: typedPart.toolCallId,
+    state: typedPart.state,
+    input: typedPart.input,
+    output: typedPart.output,
+  };
+}
+
+function renderMarkdownBlock(content: string, key: string) {
+  const visible = normalizeVisibleText(content);
+  if (!visible) return null;
+  return (
+    <div
+      key={key}
+      className="prose prose-sm dark:prose-invert max-w-none text-inherit [&>*:first-child]:mt-0 [&>*:last-child]:mb-0"
+    >
+      <MarkdownContent content={visible} />
+    </div>
+  );
+}
+
 export function MessageBubble({ message }: MessageBubbleProps) {
   const isUser = message.role === "user";
 
-  // Extract text content from parts
-  const textContent = message.parts
-    .filter((p): p is { type: "text"; text: string } => p.type === "text")
-    .map((p) => p.text)
-    .join("");
+  if (isUser) {
+    const visibleTextContent = normalizeVisibleText(
+      message.parts
+        .filter((p): p is { type: "text"; text: string } => p.type === "text")
+        .map((p) => p.text)
+        .join("\n")
+    );
 
-  // Extract tool parts
-  const toolParts = message.parts.filter(
-    (p) => p.type.startsWith("tool-") || p.type === "dynamic-tool"
-  );
+    if (!visibleTextContent) return null;
 
-  // The agent often emits final answers via the `response` tool with no text part.
-  // Surface that output as regular assistant text so the user always sees it.
-  const responseToolText = toolParts
-    .map((part) => {
-      if (part.type === "dynamic-tool") {
-        const dp = part as {
-          toolName?: string;
-          state?: string;
-          output?: unknown;
-        };
-        if (dp.toolName !== "response" || dp.state !== "output-available") return "";
-        return typeof dp.output === "string" ? dp.output : JSON.stringify(dp.output ?? "");
-      }
+    return (
+      <div className="flex items-start gap-3 py-2">
+        <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
+          <User className="size-4" />
+        </div>
+        <div className="min-w-0 flex-1 pt-0.5 text-sm leading-7">
+          <p className="whitespace-pre-wrap">{visibleTextContent}</p>
+        </div>
+      </div>
+    );
+  }
 
-      if (!part.type.startsWith("tool-")) return "";
-      const tp = part as {
-        type: string;
-        state?: string;
-        output?: unknown;
-      };
-      const toolName = tp.type.replace("tool-", "");
-      if (toolName !== "response" || tp.state !== "output-available") return "";
-      return typeof tp.output === "string" ? tp.output : JSON.stringify(tp.output ?? "");
-    })
-    .filter(Boolean)
-    .join("\n\n");
+  const renderedParts = message.parts.map((part, idx) => {
+    if (part.type === "text") {
+      return renderMarkdownBlock(part.text, `text-${idx}`);
+    }
 
-  const visibleTextContent =
-    normalizeVisibleText(textContent) || normalizeVisibleText(responseToolText);
+    const tool = toolPartInfo(part);
+    if (!tool) return null;
+
+    if (tool.toolName === "response" && tool.state === "output-available") {
+      return renderMarkdownBlock(valueToText(tool.output), `response-${tool.toolCallId || idx}`);
+    }
+
+    return (
+      <ToolOutput
+        key={`tool-${tool.toolCallId || idx}-${idx}`}
+        toolName={tool.toolName}
+        args={
+          typeof tool.input === "object" && tool.input !== null
+            ? (tool.input as Record<string, unknown>)
+            : {}
+        }
+        result={
+          tool.state === "output-available"
+            ? valueToText(tool.output)
+            : tool.state === "output-error"
+              ? valueToText(tool.output) || "Error occurred"
+              : "Running..."
+        }
+      />
+    );
+  });
+
+  if (!renderedParts.some(Boolean)) return null;
 
   return (
-    <div className="space-y-1">
-      {/* Tool invocations */}
-      {toolParts.map((part, idx) => {
-        if (part.type === "dynamic-tool") {
-          const dp = part as {
-            type: "dynamic-tool";
-            toolName: string;
-            toolCallId: string;
-            state: string;
-            input?: unknown;
-            output?: unknown;
-          };
-          return (
-            <ToolOutput
-              key={`tool-${dp.toolCallId}-${idx}`}
-              toolName={dp.toolName}
-              args={
-                typeof dp.input === "object" && dp.input !== null
-                  ? (dp.input as Record<string, unknown>)
-                  : {}
-              }
-              result={
-                dp.state === "output-available"
-                  ? typeof dp.output === "string"
-                    ? dp.output
-                    : JSON.stringify(dp.output)
-                  : dp.state === "output-error"
-                    ? "Error occurred"
-                    : "Running..."
-              }
-            />
-          );
-        }
-        // Handle typed tool parts (tool-{name})
-        if (part.type.startsWith("tool-")) {
-          const tp = part as {
-            type: string;
-            toolCallId?: string;
-            state?: string;
-            input?: unknown;
-            output?: unknown;
-          };
-          const toolName = part.type.replace("tool-", "");
-          return (
-            <ToolOutput
-              key={`tool-${tp.toolCallId || idx}-${idx}`}
-              toolName={toolName}
-              args={
-                typeof tp.input === "object" && tp.input !== null
-                  ? (tp.input as Record<string, unknown>)
-                  : {}
-              }
-              result={
-                tp.state === "output-available"
-                  ? typeof tp.output === "string"
-                    ? tp.output
-                    : JSON.stringify(tp.output)
-                  : tp.state === "output-error"
-                    ? "Error occurred"
-                    : "Running..."
-              }
-            />
-          );
-        }
-        return null;
-      })}
-
-      {/* Text content: same font size for user and AI, first line aligned with icon center */}
-      {visibleTextContent && (
-        <div className="flex gap-3 py-2 items-start">
-          <div
-            className={`flex size-8 shrink-0 items-center justify-center rounded-full ${
-              isUser
-                ? "bg-secondary text-secondary-foreground"
-                : "bg-foreground text-background"
-            }`}
-          >
-            {isUser ? (
-              <User className="size-4" />
-            ) : (
-              <Bot className="size-4" />
-            )}
-          </div>
-          <div className="flex-1 min-w-0 text-sm leading-7 pt-0.5">
-            {isUser ? (
-              <p className="whitespace-pre-wrap">{visibleTextContent}</p>
-            ) : (
-              <div className="prose prose-sm dark:prose-invert max-w-none text-inherit [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
-                <MarkdownContent content={visibleTextContent} />
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+    <div className="flex items-start gap-3 py-2">
+      <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-foreground text-background">
+        <Bot className="size-4" />
+      </div>
+      <div className="flex min-w-0 flex-1 flex-col gap-3 pt-0.5 text-sm leading-7">
+        {renderedParts}
+      </div>
     </div>
   );
 }

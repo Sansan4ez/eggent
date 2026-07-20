@@ -7,7 +7,7 @@ import { ChatMessages } from "./chat-messages";
 import { ChatInput } from "./chat-input";
 import { useAppStore } from "@/store/app-store";
 import { useState, useCallback, useEffect, useRef, useMemo } from "react";
-import type { ChatMessage } from "@/lib/types";
+import type { ChatMessage, ChatMessagePart } from "@/lib/types";
 import type { PiRuntimeStats } from "@/lib/pi/types";
 import { useBackgroundSync } from "@/hooks/use-background-sync";
 import { generateClientId } from "@/lib/utils";
@@ -28,6 +28,21 @@ function getLatestPiRuntimeStats(messages: UIMessage[]): PiRuntimeStats | null {
     }
   }
   return null;
+}
+
+function storedPartToUIPart(part: ChatMessagePart): UIMessage["parts"][number] | null {
+  if (part.type === "text") {
+    return { type: "text" as const, text: part.text };
+  }
+
+  return {
+    type: `tool-${part.toolName}` as `tool-${string}`,
+    toolCallId: part.toolCallId,
+    toolName: part.toolName,
+    state: part.status === "error" ? "output-error" as const : "output-available" as const,
+    input: part.args,
+    output: part.output ?? "",
+  } as unknown as UIMessage["parts"][number];
 }
 
 function chatMessagesToUIMessages(chatMessages: ChatMessage[]): UIMessage[] {
@@ -51,24 +66,30 @@ function chatMessagesToUIMessages(chatMessages: ChatMessage[]): UIMessage[] {
     } else if (m.role === "assistant") {
       const parts: UIMessage["parts"] = [];
 
-      // Add tool call parts with their results
-      if (m.toolCalls && m.toolCalls.length > 0) {
-        for (const tc of m.toolCalls) {
-          const toolResult = toolResultMap.get(tc.toolCallId);
-          parts.push({
-            type: `tool-${tc.toolName}` as `tool-${string}`,
-            toolCallId: tc.toolCallId,
-            toolName: tc.toolName,
-            state: "output-available" as const,
-            input: tc.args,
-            output: toolResult?.toolResult ?? toolResult?.content ?? "",
-          } as unknown as UIMessage["parts"][number]);
+      if (m.parts?.length) {
+        for (const storedPart of m.parts) {
+          const uiPart = storedPartToUIPart(storedPart);
+          if (uiPart) parts.push(uiPart);
         }
-      }
+      } else {
+        // Legacy chats did not persist ordered parts. Keep the old fallback shape.
+        if (m.toolCalls && m.toolCalls.length > 0) {
+          for (const tc of m.toolCalls) {
+            const toolResult = toolResultMap.get(tc.toolCallId);
+            parts.push({
+              type: `tool-${tc.toolName}` as `tool-${string}`,
+              toolCallId: tc.toolCallId,
+              toolName: tc.toolName,
+              state: "output-available" as const,
+              input: tc.args,
+              output: toolResult?.toolResult ?? toolResult?.content ?? "",
+            } as unknown as UIMessage["parts"][number]);
+          }
+        }
 
-      // Add text content
-      if (m.content) {
-        parts.push({ type: "text" as const, text: m.content });
+        if (m.content) {
+          parts.push({ type: "text" as const, text: m.content });
+        }
       }
 
       // Keep runtime stats in the message stream so the footer remains

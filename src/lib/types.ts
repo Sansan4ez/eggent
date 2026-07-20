@@ -69,6 +69,17 @@ export interface AppSettings {
 
 export type MessageRole = "user" | "assistant" | "system" | "tool";
 
+export type ChatMessagePart =
+  | { type: "text"; text: string }
+  | {
+      type: "tool";
+      toolCallId: string;
+      toolName: string;
+      args: Record<string, unknown>;
+      output?: unknown;
+      status?: "running" | "completed" | "error";
+    };
+
 export interface ChatMessage {
   id: string;
   role: MessageRole;
@@ -82,6 +93,8 @@ export interface ChatMessage {
     toolName: string;
     args: Record<string, unknown>;
   }>;
+  /** Ordered assistant timeline for web UI: text → tool → text. Plain content stays for API/Telegram. */
+  parts?: ChatMessagePart[];
   attachments?: Attachment[];
   piRuntimeStats?: PiRuntimeStats;
 }

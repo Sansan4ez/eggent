@@ -4,7 +4,7 @@ import { createEggentPiSession } from "@/lib/pi/session";
 import { retainPiScheduleSession, takeRetainedPiScheduleSession } from "@/lib/pi/schedule-host";
 import type { PiChatRunOptions, PiRuntimeStats, PiToolRecord } from "@/lib/pi/types";
 import { getChat, saveChat } from "@/lib/storage/chat-store";
-import type { ChatMessage } from "@/lib/types";
+import type { ChatMessage, ChatMessagePart } from "@/lib/types";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (value == null || typeof value !== "object" || Array.isArray(value)) {
@@ -196,6 +196,51 @@ function normalizeToolInput(input: unknown): Record<string, unknown> {
   return asRecord(input) ?? {};
 }
 
+function appendTimelineText(parts: ChatMessagePart[], delta: string): void {
+  if (!delta) return;
+  const last = parts[parts.length - 1];
+  if (last?.type === "text") {
+    last.text += delta;
+    return;
+  }
+  parts.push({ type: "text", text: delta });
+}
+
+function upsertTimelineTool(parts: ChatMessagePart[], tool: PiToolRecord): void {
+  const existing = parts.find(
+    (part): part is Extract<ChatMessagePart, { type: "tool" }> =>
+      part.type === "tool" && part.toolCallId === tool.toolCallId
+  );
+  const next = {
+    type: "tool" as const,
+    toolCallId: tool.toolCallId,
+    toolName: tool.toolName,
+    args: normalizeToolInput(tool.input),
+    output: tool.output,
+    status: tool.status,
+  };
+  if (existing) {
+    existing.toolName = next.toolName;
+    existing.args = next.args;
+    existing.output = next.output;
+    existing.status = next.status;
+  } else {
+    parts.push(next);
+  }
+}
+
+function completedTimelineParts(parts: ChatMessagePart[]): ChatMessagePart[] {
+  return parts
+    .map((part) => {
+      if (part.type === "text") {
+        return part.text ? part : null;
+      }
+      if (part.status === "running") return null;
+      return part;
+    })
+    .filter((part): part is ChatMessagePart => Boolean(part));
+}
+
 function hasScheduleManagementIntent(text: string): boolean {
   const normalized = text.toLowerCase();
   const mentionsSchedules =
@@ -310,6 +355,7 @@ async function persistAssistantMessage(options: {
   assistantText: string;
   tools: PiToolRecord[];
   runtimeStats?: PiRuntimeStats;
+  parts?: ChatMessagePart[];
 }) {
   const chat = await getChat(options.chatId);
   if (!chat) return;
@@ -328,6 +374,7 @@ async function persistAssistantMessage(options: {
         toolName: tool.toolName,
         args: normalizeToolInput(tool.input),
       })),
+      parts: completedTimelineParts(options.parts ?? []),
       piRuntimeStats: options.runtimeStats,
     };
     chat.messages.push(assistantMessage);
@@ -370,6 +417,7 @@ export async function runPiAgentText(options: PiChatRunOptions & { runtimeData?:
   let currentPromptUsage: PiRuntimeStats["lastTurn"] | undefined;
   const baselineUsage = getSessionTokenUsage(session);
   const tools = new Map<string, PiToolRecord>();
+  const timelineParts: ChatMessagePart[] = [];
 
   const unsubscribe = session.subscribe((event: unknown) => {
     const record = asRecord(event);
@@ -379,6 +427,7 @@ export async function runPiAgentText(options: PiChatRunOptions & { runtimeData?:
       const assistantEvent = asRecord(record.assistantMessageEvent);
       if (assistantEvent?.type === "text_delta" && typeof assistantEvent.delta === "string") {
         assistantText += assistantEvent.delta;
+        appendTimelineText(timelineParts, assistantEvent.delta);
       }
       return;
     }
@@ -397,12 +446,14 @@ export async function runPiAgentText(options: PiChatRunOptions & { runtimeData?:
       const toolCallId =
         typeof record.toolCallId === "string" ? record.toolCallId : crypto.randomUUID();
       const toolName = typeof record.toolName === "string" ? record.toolName : "tool";
-      tools.set(toolCallId, {
+      const toolRecord: PiToolRecord = {
         toolCallId,
         toolName,
         input: getToolArgs(record),
         status: "running",
-      });
+      };
+      tools.set(toolCallId, toolRecord);
+      upsertTimelineTool(timelineParts, toolRecord);
       return;
     }
 
@@ -411,13 +462,15 @@ export async function runPiAgentText(options: PiChatRunOptions & { runtimeData?:
         typeof record.toolCallId === "string" ? record.toolCallId : crypto.randomUUID();
       const toolName = typeof record.toolName === "string" ? record.toolName : "tool";
       const existing = tools.get(toolCallId);
-      tools.set(toolCallId, {
+      const toolRecord: PiToolRecord = {
         toolCallId,
         toolName,
         input: existing?.input ?? {},
         output: getToolResult(record),
         status: record.isError === true ? "error" : "completed",
-      });
+      };
+      tools.set(toolCallId, toolRecord);
+      upsertTimelineTool(timelineParts, toolRecord);
     }
   });
 
@@ -431,6 +484,7 @@ export async function runPiAgentText(options: PiChatRunOptions & { runtimeData?:
       assistantText,
       tools: [...tools.values()],
       runtimeStats: buildPiRuntimeStats(session, currentPromptUsage, addUsage(baselineUsage, currentPromptUsage)),
+      parts: timelineParts,
     });
     return assistantText;
   } finally {
@@ -461,11 +515,12 @@ export function createPiChatUIMessageStream(options: PiChatRunOptions) {
 
       let assistantText = "";
       let textStarted = false;
+      let currentTextId: string | null = null;
       let lastTurnUsage: PiRuntimeStats["lastTurn"] | undefined;
       let currentPromptUsage: PiRuntimeStats["lastTurn"] | undefined;
       const baselineUsage = getSessionTokenUsage(session);
-      const textId = `pi-text-${crypto.randomUUID()}`;
       const tools = new Map<string, PiToolRecord>();
+      const timelineParts: ChatMessagePart[] = [];
 
       const emitStats = (stats: PiRuntimeStats) => {
         writer.write({
@@ -478,9 +533,18 @@ export function createPiChatUIMessageStream(options: PiChatRunOptions) {
       emitStats(buildPiRuntimeStats(session));
 
       const ensureTextStarted = () => {
-        if (textStarted) return;
+        if (textStarted && currentTextId) return currentTextId;
+        currentTextId = `pi-text-${crypto.randomUUID()}`;
         textStarted = true;
-        writer.write({ type: "text-start", id: textId });
+        writer.write({ type: "text-start", id: currentTextId });
+        return currentTextId;
+      };
+
+      const closeTextPart = () => {
+        if (!textStarted || !currentTextId) return;
+        writer.write({ type: "text-end", id: currentTextId });
+        textStarted = false;
+        currentTextId = null;
       };
 
       const unsubscribe = session.subscribe((event: unknown) => {
@@ -490,8 +554,9 @@ export function createPiChatUIMessageStream(options: PiChatRunOptions) {
         if (record.type === "message_update") {
           const assistantEvent = asRecord(record.assistantMessageEvent);
           if (assistantEvent?.type === "text_delta" && typeof assistantEvent.delta === "string") {
-            ensureTextStarted();
+            const textId = ensureTextStarted();
             assistantText += assistantEvent.delta;
+            appendTimelineText(timelineParts, assistantEvent.delta);
             writer.write({ type: "text-delta", id: textId, delta: assistantEvent.delta });
           }
           return;
@@ -518,12 +583,15 @@ export function createPiChatUIMessageStream(options: PiChatRunOptions) {
             typeof record.toolCallId === "string" ? record.toolCallId : crypto.randomUUID();
           const toolName = typeof record.toolName === "string" ? record.toolName : "tool";
           const input = getToolArgs(record);
-          tools.set(toolCallId, {
+          const toolRecord: PiToolRecord = {
             toolCallId,
             toolName,
             input,
             status: "running",
-          });
+          };
+          tools.set(toolCallId, toolRecord);
+          closeTextPart();
+          upsertTimelineTool(timelineParts, toolRecord);
           writer.write({
             type: "tool-input-available",
             toolCallId,
@@ -541,13 +609,15 @@ export function createPiChatUIMessageStream(options: PiChatRunOptions) {
           const output = getToolResult(record);
           const isError = record.isError === true;
           const existing = tools.get(toolCallId);
-          tools.set(toolCallId, {
+          const toolRecord: PiToolRecord = {
             toolCallId,
             toolName,
             input: existing?.input ?? {},
             output,
             status: isError ? "error" : "completed",
-          });
+          };
+          tools.set(toolCallId, toolRecord);
+          upsertTimelineTool(timelineParts, toolRecord);
 
           if (isError) {
             writer.write({
@@ -574,14 +644,13 @@ export function createPiChatUIMessageStream(options: PiChatRunOptions) {
         lastTurnUsage = lastTurnUsage ?? currentPromptUsage;
         const finalStats = buildPiRuntimeStats(session, currentPromptUsage, addUsage(baselineUsage, currentPromptUsage));
         emitStats(finalStats);
-        if (textStarted) {
-          writer.write({ type: "text-end", id: textId });
-        }
+        closeTextPart();
         await persistAssistantMessage({
           chatId: options.chatId,
           assistantText,
           tools: [...tools.values()],
           runtimeStats: finalStats,
+          parts: timelineParts,
         });
       } catch (error) {
         const errorStats = buildPiRuntimeStats(
@@ -590,12 +659,14 @@ export function createPiChatUIMessageStream(options: PiChatRunOptions) {
           addUsage(baselineUsage, currentPromptUsage)
         );
         const errorText = formatPiChatError(error);
+        closeTextPart();
         console.error("Pi chat stream execution error:", error);
         await persistAssistantMessage({
           chatId: options.chatId,
           assistantText: errorText,
           tools: [...tools.values()],
           runtimeStats: errorStats,
+          parts: [...completedTimelineParts(timelineParts), { type: "text", text: errorText }],
         });
         throw error;
       } finally {
