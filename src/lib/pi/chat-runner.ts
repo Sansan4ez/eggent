@@ -34,6 +34,14 @@ function stringifyForDisplay(value: unknown): string {
   }
 }
 
+function formatPiChatError(error: unknown): string {
+  const raw = error instanceof Error ? error.message : String(error);
+  const compact = raw.replace(/\s+/g, " ").trim();
+  const message = compact || "The model stopped before producing a final response.";
+  const short = message.length > 500 ? `${message.slice(0, 500)}...` : message;
+  return `Generation failed: ${short}`;
+}
+
 function getToolArgs(event: Record<string, unknown>) {
   return event.args ?? event.input ?? {};
 }
@@ -575,6 +583,21 @@ export function createPiChatUIMessageStream(options: PiChatRunOptions) {
           tools: [...tools.values()],
           runtimeStats: finalStats,
         });
+      } catch (error) {
+        const errorStats = buildPiRuntimeStats(
+          session,
+          currentPromptUsage ?? lastTurnUsage,
+          addUsage(baselineUsage, currentPromptUsage)
+        );
+        const errorText = formatPiChatError(error);
+        console.error("Pi chat stream execution error:", error);
+        await persistAssistantMessage({
+          chatId: options.chatId,
+          assistantText: errorText,
+          tools: [...tools.values()],
+          runtimeStats: errorStats,
+        });
+        throw error;
       } finally {
         unsubscribe();
         const retained = await retainPiScheduleSession({
