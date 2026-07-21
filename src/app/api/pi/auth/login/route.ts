@@ -11,6 +11,16 @@ type LoginEvent =
   | { id: string; type: "completed"; state: unknown; createdAt: number }
   | { id: string; type: "error"; message: string; createdAt: number };
 
+type AuthPromptLike =
+  | { type: "text" | "secret" | "manual_code"; message: string; placeholder?: string; signal?: AbortSignal }
+  | { type: "select"; message: string; options: readonly { id: string; label: string; description?: string }[]; signal?: AbortSignal };
+
+type AuthEventLike =
+  | { type: "info"; message: string; links?: readonly { url: string; label?: string }[] }
+  | { type: "auth_url"; url: string; instructions?: string }
+  | { type: "device_code"; userCode: string; verificationUri: string; intervalSeconds?: number; expiresInSeconds?: number }
+  | { type: "progress"; message: string };
+
 type PendingPrompt = {
   resolve: (value: string | undefined) => void;
   reject: (error: Error) => void;
@@ -57,6 +67,48 @@ function waitForPrompt(job: LoginJob, event: Omit<Extract<LoginEvent, { type: "p
     job.pending.set(promptId, { resolve, reject });
     job.controller.signal.addEventListener("abort", () => reject(new Error("Login cancelled")), { once: true });
   });
+}
+
+function handleAuthNotify(job: LoginJob, event: AuthEventLike): void {
+  if (event.type === "auth_url") {
+    pushEvent(job, { type: "auth_url", url: event.url, instructions: event.instructions });
+    return;
+  }
+  if (event.type === "device_code") {
+    pushEvent(job, { type: "device_code", ...event });
+    return;
+  }
+  if (event.type === "progress") {
+    pushEvent(job, { type: "progress", message: event.message });
+    return;
+  }
+  const links = event.links?.map((link) => link.label ? `${link.label}: ${link.url}` : link.url).join("\n");
+  pushEvent(job, { type: "progress", message: links ? `${event.message}\n${links}` : event.message });
+}
+
+async function handleAuthPrompt(job: LoginJob, prompt: AuthPromptLike): Promise<string> {
+  const promptId = randomUUID();
+  if (prompt.type === "select") {
+    const value = await waitForPrompt(job, {
+      type: "select",
+      promptId,
+      message: prompt.message,
+      options: prompt.options.map((option) => ({ id: option.id, label: option.label })),
+    });
+    if (!value) throw new Error("Login cancelled");
+    return value;
+  }
+
+  const value = await waitForPrompt(job, {
+    type: "prompt",
+    promptId,
+    message: prompt.message,
+    placeholder: prompt.placeholder,
+    allowEmpty: false,
+    manualCode: prompt.type === "manual_code",
+  });
+  if (!value) throw new Error("Login cancelled");
+  return value;
 }
 
 function serializeJob(job: LoginJob) {
@@ -106,40 +158,8 @@ export async function POST(req: NextRequest) {
   void (async () => {
     try {
       await modelRuntime.login(provider, "oauth", {
-        onAuth: (info) => pushEvent(job, { type: "auth_url", url: info.url, instructions: info.instructions }),
-        onDeviceCode: (info) => pushEvent(job, { type: "device_code", ...info }),
-        onProgress: (message) => pushEvent(job, { type: "progress", message }),
-        onPrompt: async (prompt) => {
-          const value = await waitForPrompt(job, {
-            type: "prompt",
-            promptId: randomUUID(),
-            message: prompt.message,
-            placeholder: prompt.placeholder,
-            allowEmpty: prompt.allowEmpty,
-          });
-          if (!value && !prompt.allowEmpty) throw new Error("Login cancelled");
-          return value || "";
-        },
-        onManualCodeInput: async () => {
-          const value = await waitForPrompt(job, {
-            type: "prompt",
-            promptId: randomUUID(),
-            message: "Complete login in your browser, or paste the authorization code / redirect URL here:",
-            placeholder: "http://localhost:1455/auth/callback?...",
-            manualCode: true,
-          });
-          if (!value) throw new Error("Login cancelled");
-          return value;
-        },
-        onSelect: async (prompt) => {
-          const value = await waitForPrompt(job, {
-            type: "select",
-            promptId: randomUUID(),
-            message: prompt.message,
-            options: prompt.options,
-          });
-          return value;
-        },
+        prompt: (prompt) => handleAuthPrompt(job, prompt as AuthPromptLike),
+        notify: (event) => handleAuthNotify(job, event as AuthEventLike),
         signal: job.controller.signal,
       });
       await setPiDefaultToFirstAvailableModel(provider);
