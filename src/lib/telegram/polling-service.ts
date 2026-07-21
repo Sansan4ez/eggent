@@ -117,7 +117,9 @@ class TelegramPollingService {
             const runtimeConfig = await getTelegramIntegrationRuntimeConfig();
             const botToken = runtimeConfig.botToken.trim();
             if (!botToken) {
-                throw new Error("Bot token is required");
+                console.log("[Telegram Polling] Bot token removed, stopping polling service");
+                this.stop();
+                return;
             }
 
             const detectedMode = detectTelegramMode(runtimeConfig);

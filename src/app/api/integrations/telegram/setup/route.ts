@@ -66,6 +66,29 @@ async function deleteTelegramWebhook(botToken: string): Promise<void> {
   });
 }
 
+async function claimHostedTelegramBot(botToken: string): Promise<string | null> {
+  const claimUrl = process.env.EGGENT_CLOUD_TELEGRAM_CLAIM_URL?.trim();
+  const instanceId = process.env.EGGENT_CLOUD_INSTANCE_ID?.trim();
+  const instanceToken = process.env.EXTERNAL_API_TOKEN?.trim();
+  if (!claimUrl || !instanceId || !instanceToken) return null;
+
+  try {
+    const response = await fetch(claimUrl, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${instanceToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ instanceId, botToken }),
+    });
+    if (response.ok) return null;
+    const payload = await response.json().catch(() => null) as { error?: string } | null;
+    return payload?.error || `Cloud Telegram claim failed (${response.status})`;
+  } catch (error) {
+    return error instanceof Error ? error.message : "Cloud Telegram claim failed";
+  }
+}
+
 async function setTelegramBotWelcome(botToken: string): Promise<void> {
   const description = "Eggent is connected. Send /start to begin.";
   await Promise.allSettled([
@@ -155,6 +178,12 @@ export async function POST(req: NextRequest) {
 
     const requestedMode = body.mode === "webhook" ? "webhook" : "polling";
     const botInfo = await getTelegramBotInfo(botToken);
+    const claimWarning = requestedMode === "polling"
+      ? await claimHostedTelegramBot(botToken)
+      : null;
+    if (claimWarning) {
+      console.warn("Telegram cloud claim warning:", claimWarning);
+    }
     const webhookSecret =
       stored.webhookSecret.trim() ||
       runtime.webhookSecret.trim() ||
@@ -194,6 +223,7 @@ export async function POST(req: NextRequest) {
         webhookUrl,
         botUsername: botInfo.username || null,
         botLink: botInfo.username ? `https://t.me/${botInfo.username}` : null,
+        claimWarning,
         settings,
       });
     }
@@ -216,6 +246,7 @@ export async function POST(req: NextRequest) {
       mode: "polling",
       botUsername: botInfo.username || null,
       botLink: botInfo.username ? `https://t.me/${botInfo.username}` : null,
+      claimWarning,
       settings,
     });
   } catch (error) {
