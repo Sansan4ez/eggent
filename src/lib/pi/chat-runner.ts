@@ -1,12 +1,10 @@
-import fs from "fs/promises";
 import { createUIMessageStream } from "ai";
 import type { UIMessage } from "ai";
 import { createEggentPiSession } from "@/lib/pi/session";
 import { retainPiScheduleSession, takeRetainedPiScheduleSession } from "@/lib/pi/schedule-host";
 import type { PiChatRunOptions, PiRuntimeStats, PiToolRecord } from "@/lib/pi/types";
 import { getChat, saveChat } from "@/lib/storage/chat-store";
-import { getChatFiles } from "@/lib/storage/chat-files-store";
-import type { ChatFile, ChatMessage, ChatMessagePart } from "@/lib/types";
+import type { ChatMessage, ChatMessagePart } from "@/lib/types";
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (value == null || typeof value !== "object" || Array.isArray(value)) {
@@ -196,49 +194,6 @@ function buildPiRuntimeStats(session: {
 
 function normalizeToolInput(input: unknown): Record<string, unknown> {
   return asRecord(input) ?? {};
-}
-
-type PiPromptImage = {
-  type: "image";
-  source: {
-    type: "base64";
-    mediaType: string;
-    data: string;
-  };
-};
-
-const IMAGE_CHAT_FILE_TYPES = new Set([
-  "image/png",
-  "image/jpeg",
-  "image/webp",
-  "image/gif",
-]);
-
-function isSupportedImageChatFile(file: ChatFile): boolean {
-  return IMAGE_CHAT_FILE_TYPES.has(file.type);
-}
-
-async function getPromptImagesForChat(chatId: string): Promise<PiPromptImage[]> {
-  const files = await getChatFiles(chatId).catch(() => []);
-  const images: PiPromptImage[] = [];
-
-  for (const file of files.filter(isSupportedImageChatFile)) {
-    try {
-      const bytes = await fs.readFile(file.path);
-      images.push({
-        type: "image",
-        source: {
-          type: "base64",
-          mediaType: file.type,
-          data: bytes.toString("base64"),
-        },
-      });
-    } catch (error) {
-      console.warn(`Failed to load chat image attachment ${file.name}:`, error);
-    }
-  }
-
-  return images;
 }
 
 function appendTimelineText(parts: ChatMessagePart[], delta: string): void {
@@ -521,8 +476,7 @@ export async function runPiAgentText(options: PiChatRunOptions & { runtimeData?:
 
   try {
     applySchedulingToolPolicy(session, prompt);
-    const promptImages = await getPromptImagesForChat(options.chatId);
-    await session.prompt(preparePromptForRuntime(prompt), promptImages.length > 0 ? { images: promptImages } : undefined);
+    await session.prompt(preparePromptForRuntime(prompt));
     currentPromptUsage = currentPromptUsage ?? subtractUsage(getSessionTokenUsage(session), baselineUsage);
     lastTurnUsage = lastTurnUsage ?? currentPromptUsage;
     await persistAssistantMessage({
@@ -685,8 +639,7 @@ export function createPiChatUIMessageStream(options: PiChatRunOptions) {
 
       try {
         applySchedulingToolPolicy(session, options.userMessage);
-        const promptImages = await getPromptImagesForChat(options.chatId);
-        await session.prompt(preparePromptForRuntime(options.userMessage), promptImages.length > 0 ? { images: promptImages } : undefined);
+        await session.prompt(preparePromptForRuntime(options.userMessage));
         currentPromptUsage = currentPromptUsage ?? subtractUsage(getSessionTokenUsage(session), baselineUsage);
         lastTurnUsage = lastTurnUsage ?? currentPromptUsage;
         const finalStats = buildPiRuntimeStats(session, currentPromptUsage, addUsage(baselineUsage, currentPromptUsage));
