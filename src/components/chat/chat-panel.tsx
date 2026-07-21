@@ -325,7 +325,11 @@ function assistantMessageHasToolOutput(message: UIMessage): boolean {
 const NO_FINAL_RESPONSE_FALLBACK =
   "Инструменты выполнились, но финальный ответ не получен. Напишите `continue`, и я завершу ответ.";
 
-export function ChatPanel() {
+interface ChatPanelProps {
+  initialQuickSkills?: QuickSkillAction[];
+}
+
+export function ChatPanel({ initialQuickSkills = [] }: ChatPanelProps) {
   const {
     activeChatId,
     setActiveChatId,
@@ -340,7 +344,7 @@ export function ChatPanel() {
   const [chatError, setChatError] = useState<string | null>(null);
   const [inputFocusSignal, setInputFocusSignal] = useState(0);
   const [configuredRuntimeStats, setConfiguredRuntimeStats] = useState<PiRuntimeStats | null>(null);
-  const [quickSkills, setQuickSkills] = useState<QuickSkillAction[]>([]);
+  const [quickSkills, setQuickSkills] = useState<QuickSkillAction[]>(initialQuickSkills);
   const [launchingSkill, setLaunchingSkill] = useState<string | null>(null);
 
   // Internal chatId that stays stable during a message send.
