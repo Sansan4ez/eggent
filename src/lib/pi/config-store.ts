@@ -44,6 +44,30 @@ export function getPiModelsPath(): string {
   return path.join(getPiAgentDir(), "models.json");
 }
 
+function getEggentAiLockOverridePath(): string {
+  return path.join(getPiAgentDir(), "eggent-ai-lock.json");
+}
+
+async function readEggentAiLockOverride(): Promise<{ disabled?: boolean }> {
+  try {
+    const content = await fs.readFile(getEggentAiLockOverridePath(), "utf-8");
+    const parsed = JSON.parse(content) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as { disabled?: boolean }
+      : {};
+  } catch (error) {
+    if ((error as { code?: string }).code === "ENOENT") return {};
+    throw error;
+  }
+}
+
+async function writeEggentAiLockOverride(content: { disabled?: boolean }): Promise<void> {
+  const filePath = getEggentAiLockOverridePath();
+  await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
+  await fs.writeFile(filePath, `${JSON.stringify(content, null, 2)}\n`, { mode: 0o600 });
+  await fs.chmod(filePath, 0o600).catch(() => undefined);
+}
+
 async function readAuthJson(): Promise<Record<string, StoredCredentialRecord>> {
   try {
     const content = await fs.readFile(getPiAuthPath(), "utf-8");
@@ -138,6 +162,9 @@ export function getPiSettingsManager(cwd = process.cwd()): SettingsManager {
 
 export async function getEggentAiModelLockState(cwd = process.cwd()): Promise<{ locked: boolean; label: string }> {
   const label = eggentAiModelLabel();
+  const override = await readEggentAiLockOverride();
+  if (override.disabled === true) return { locked: false, label };
+
   if (isTruthyEnv(process.env.EGGENT_AI_MODEL_LOCKED) || isTruthyEnv(process.env.EGGENT_MANAGED_AI_LOCKED)) {
     return { locked: true, label };
   }
@@ -153,6 +180,24 @@ export async function getEggentAiModelLockState(cwd = process.cwd()): Promise<{ 
   }
 
   return { locked: false, label };
+}
+
+export async function disableEggentAiModelLock(cwd = process.cwd()): Promise<void> {
+  await writeEggentAiLockOverride({ disabled: true });
+  const auth = await readAuthJson();
+  for (const [provider, credential] of Object.entries(auth)) {
+    if (provider === "eggent-ai" || (typeof credential.key === "string" && credential.key.startsWith("eggw_"))) {
+      delete auth[provider];
+    }
+  }
+  await writeAuthJson(auth);
+
+  const settingsManager = getPiSettingsManager(cwd);
+  if (settingsManager.getDefaultProvider() === "eggent-ai") {
+    settingsManager.setDefaultProvider("");
+    settingsManager.setDefaultModel("");
+    await settingsManager.flush();
+  }
 }
 
 export async function getPiSettingsState(cwd = process.cwd()) {

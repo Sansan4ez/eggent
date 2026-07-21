@@ -255,7 +255,10 @@ export default function SettingsPage() {
   }
 
   async function logoutProvider(providerId: string) {
-    if (!confirm(`Log out from ${providerId}? Stored credentials will be removed.`)) return;
+    const message = providerId === "eggent-ai"
+      ? "Switch from Eggent AI to your own provider key? You can add an API key after this."
+      : `Log out from ${providerId}? Stored credentials will be removed.`;
+    if (!confirm(message)) return;
     const res = await fetch(`/api/pi/auth?provider=${encodeURIComponent(providerId)}`, { method: "DELETE" });
     const json = await res.json().catch(() => null);
     if (!res.ok) {
@@ -493,12 +496,18 @@ export default function SettingsPage() {
                 ) : null}
 
                 {modelLocked ? (
-                  <div className="rounded-lg border p-4 space-y-2">
-                    <div className="text-xs font-mono text-muted-foreground">managed</div>
-                    <h4 className="font-medium">{modelLockLabel}</h4>
-                    <p className="text-sm text-muted-foreground">
-                      Your workspace uses included Eggent AI credits. Provider credentials and model selection are managed by Eggent.
-                    </p>
+                  <div className="rounded-lg border p-4 space-y-3">
+                    <div>
+                      <div className="text-xs font-mono text-muted-foreground">managed</div>
+                      <h4 className="font-medium">{modelLockLabel}</h4>
+                      <p className="text-sm text-muted-foreground">
+                        Your workspace uses included Eggent AI credits. To use your own provider key, log out from Eggent AI first.
+                      </p>
+                    </div>
+                    <Button variant="outline" className="gap-2" onClick={() => logoutProvider("eggent-ai")}>
+                      <LogOut className="size-4" />
+                      Use my own provider key
+                    </Button>
                   </div>
                 ) : null}
 

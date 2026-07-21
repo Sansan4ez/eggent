@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { deletePiCredential, getEggentAiModelLockState, getPiModelsState, getPiSettingsState, setPiApiKeyCredential, setPiDefaultToFirstAvailableModel } from "@/lib/pi/config-store";
+import { deletePiCredential, disableEggentAiModelLock, getEggentAiModelLockState, getPiModelsState, getPiSettingsState, setPiApiKeyCredential, setPiDefaultToFirstAvailableModel } from "@/lib/pi/config-store";
 
 export async function GET() {
   const state = await getPiModelsState();
@@ -43,7 +43,12 @@ export async function DELETE(req: NextRequest) {
   }
   const lock = await getEggentAiModelLockState();
   if (lock.locked) {
-    return NextResponse.json({ error: "Provider credentials are managed by Eggent AI for this workspace." }, { status: 403 });
+    if (provider !== "eggent-ai") {
+      return NextResponse.json({ error: "Provider credentials are managed by Eggent AI for this workspace." }, { status: 403 });
+    }
+    await disableEggentAiModelLock();
+    await setPiDefaultToFirstAvailableModel();
+    return NextResponse.json(await getPiModelsState());
   }
 
   const settings = await getPiSettingsState();
