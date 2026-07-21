@@ -92,18 +92,6 @@ export function ChatMessages({ messages, isLoading, errorMessage, quickSkills = 
     );
   }
 
-  const latestMessage = messages[messages.length - 1];
-  const hasLiveAssistantContent = Boolean(
-    latestMessage?.role === "assistant" &&
-      latestMessage.parts.some((part) => {
-        if (part.type === "text" || part.type === "reasoning") {
-          return Boolean(part.text.trim());
-        }
-        if (part.type === "dynamic-tool") return true;
-        return part.type.startsWith("tool-");
-      })
-  );
-
   return (
     <div
       ref={scrollRef}
@@ -115,7 +103,7 @@ export function ChatMessages({ messages, isLoading, errorMessage, quickSkills = 
           <MessageBubble key={message.id} message={message} />
         ))}
 
-        {isLoading && messages.length > 0 && !hasLiveAssistantContent && (
+        {isLoading && messages.length > 0 && (
           <div className="flex gap-3 py-3">
             <div className="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
               <Loader2 className="size-4 animate-spin" />
