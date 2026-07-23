@@ -7,7 +7,8 @@
 </p>
 
 <p align="center">
-  <strong>Local-first AI workspace for project agents, files, pipelines, Telegram, and external API integrations.</strong>
+  <strong>Local-first AI workspace for project agents, files, pipelines, Telegram, and external API integrations.</strong><br />
+  <strong>Current version: 2.0</strong>
 </p>
 
 Eggent is a browser-based AI workspace and orchestration layer. It gives you project-scoped agents, persistent files and memory, chat history, pasted image/file context, pipelines, Telegram integration, and a simple HTTP API for external systems.
@@ -63,7 +64,7 @@ The user-facing product is Eggent. Internally, Eggent uses an agent runtime and 
 ### One-command Docker install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/eggent-ai/eggent/main/scripts/install.sh | bash
+curl -fsSL https://get.eggent.ai | bash
 ```
 
 This clones/updates Eggent in `~/.eggent`, installs Docker if possible, builds the image, starts the container, and waits for `/api/health`.
@@ -77,7 +78,7 @@ http://127.0.0.1:3000
 For a VPS that should be reachable directly from the network, opt in explicitly:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/eggent-ai/eggent/main/scripts/install.sh \
+curl -fsSL https://get.eggent.ai \
   | EGGENT_APP_BIND_HOST=0.0.0.0 bash
 ```
 
@@ -88,7 +89,7 @@ EGGENT_INSTALL_DIR=/opt/eggent \
 EGGENT_BRANCH=main \
 APP_PORT=3000 \
 EGGENT_APP_BIND_HOST=127.0.0.1 \
-bash -c "$(curl -fsSL https://raw.githubusercontent.com/eggent-ai/eggent/main/scripts/install.sh)"
+bash -c "$(curl -fsSL https://get.eggent.ai)"
 ```
 
 If the repository is private, use an authenticated GitHub session/token or clone manually and run `npm run setup:docker`.
