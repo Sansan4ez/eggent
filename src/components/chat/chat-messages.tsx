@@ -50,8 +50,8 @@ export function ChatMessages({ messages, isLoading, errorMessage, quickSkills = 
 
   if (messages.length === 0 && !isLoading) {
     return (
-      <div className="flex flex-1 items-center justify-center p-8">
-        <Empty className="border-none">
+      <div className="flex min-w-0 flex-1 items-center justify-center overflow-hidden p-4 md:p-8">
+        <Empty className="min-w-0 border-none px-0 md:px-0">
           <EmptyHeader>
             <EmptyMedia variant="icon" className="bg-primary/10 text-primary">
               <MessageCircle />
@@ -62,29 +62,36 @@ export function ChatMessages({ messages, isLoading, errorMessage, quickSkills = 
             </EmptyDescription>
           </EmptyHeader>
           {quickSkills.length > 0 ? (
-            <div className="mt-6 grid w-full max-w-3xl gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {quickSkills.map((skill) => (
-                <button
-                  key={skill.name}
-                  type="button"
-                  onClick={() => onLaunchSkill?.(skill.name)}
-                  disabled={!onLaunchSkill || Boolean(launchingSkill)}
-                  className="group flex min-h-44 flex-col justify-between rounded-2xl border bg-card p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <div className="space-y-3">
-                    <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary transition group-hover:bg-primary group-hover:text-primary-foreground">
-                      {launchingSkill === skill.name ? <Loader2 className="size-5 animate-spin" /> : <Sparkles className="size-5" />}
+            <div className="relative mt-6 w-full max-w-[min(100vw-2rem,56rem)] min-w-0">
+              <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-12 bg-gradient-to-r from-background via-background/80 to-transparent backdrop-blur-[1px]" />
+              <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-12 bg-gradient-to-l from-background via-background/80 to-transparent backdrop-blur-[1px]" />
+              <div
+                className="flex snap-x snap-mandatory gap-3 overflow-x-auto scroll-smooth px-6 pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                aria-label="Bundled skills"
+              >
+                {quickSkills.map((skill) => (
+                  <button
+                    key={skill.name}
+                    type="button"
+                    onClick={() => onLaunchSkill?.(skill.name)}
+                    disabled={!onLaunchSkill || Boolean(launchingSkill)}
+                    className="group flex min-h-40 w-[min(18rem,78vw)] flex-none snap-center flex-col justify-between rounded-2xl border bg-card p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-primary/50 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <div className="space-y-3">
+                      <div className="flex size-10 items-center justify-center rounded-xl bg-primary/10 text-primary transition group-hover:bg-primary group-hover:text-primary-foreground">
+                        {launchingSkill === skill.name ? <Loader2 className="size-5 animate-spin" /> : <Sparkles className="size-5" />}
+                      </div>
+                      <div>
+                        <div className="font-semibold leading-tight">{skill.name}</div>
+                        <p className="mt-2 line-clamp-3 text-sm leading-5 text-muted-foreground">{skill.description}</p>
+                      </div>
                     </div>
-                    <div>
-                      <div className="font-semibold leading-tight">{skill.name}</div>
-                      <p className="mt-2 line-clamp-4 text-sm leading-5 text-muted-foreground">{skill.description}</p>
+                    <div className="mt-4 text-xs font-medium text-primary">
+                      {launchingSkill === skill.name ? "Creating project…" : "Set up"}
                     </div>
-                  </div>
-                  <div className="mt-4 text-xs font-medium text-primary">
-                    {launchingSkill === skill.name ? "Creating project…" : "Set up"}
-                  </div>
-                </button>
-              ))}
+                  </button>
+                ))}
+              </div>
             </div>
           ) : null}
         </Empty>
